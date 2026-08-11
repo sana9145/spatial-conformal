@@ -1,0 +1,346 @@
+{
+  "none": {
+    "split": {
+      "true_marginal": 0.916,
+      "worst_region_coverage": 0.825,
+      "coverage_gap": 0.155,
+      "mean_width": 2.492,
+      "mean_interval_score": 3.205
+    },
+    "region_mondrian": {
+      "true_marginal": 0.958,
+      "worst_region_coverage": 0.878,
+      "coverage_gap": 0.118,
+      "mean_width": 3.28,
+      "mean_interval_score": 3.553
+    },
+    "normalized": {
+      "true_marginal": 0.916,
+      "worst_region_coverage": 0.843,
+      "coverage_gap": 0.129,
+      "mean_width": 2.406,
+      "mean_interval_score": 2.986
+    },
+    "di_normalized": {
+      "true_marginal": 0.915,
+      "worst_region_coverage": 0.831,
+      "coverage_gap": 0.145,
+      "mean_width": 2.374,
+      "mean_interval_score": 3.002
+    },
+    "cqr": {
+      "true_marginal": 0.911,
+      "worst_region_coverage": 0.828,
+      "coverage_gap": 0.139,
+      "mean_width": 2.544,
+      "mean_interval_score": 3.139
+    },
+    "di_mondrian": {
+      "true_marginal": 0.939,
+      "worst_region_coverage": 0.876,
+      "coverage_gap": 0.109,
+      "mean_width": 2.728,
+      "mean_interval_score": 3.153
+    },
+    "di_cqr": {
+      "true_marginal": 0.944,
+      "worst_region_coverage": 0.884,
+      "coverage_gap": 0.098,
+      "mean_width": 2.858,
+      "mean_interval_score": 3.184
+    },
+    "localized": {
+      "true_marginal": 0.913,
+      "worst_region_coverage": 0.834,
+      "coverage_gap": 0.141,
+      "mean_width": 2.426,
+      "mean_interval_score": 3.057
+    },
+    "geo_localized": {
+      "true_marginal": 0.911,
+      "worst_region_coverage": 0.834,
+      "coverage_gap": 0.14,
+      "mean_width": 2.423,
+      "mean_interval_score": 3.107
+    },
+    "weighted_oracle": {
+      "true_marginal": 0.913,
+      "worst_region_coverage": 0.821,
+      "coverage_gap": 0.157,
+      "mean_width": 2.467,
+      "mean_interval_score": 3.201
+    },
+    "weighted_estimated": {
+      "true_marginal": 0.913,
+      "worst_region_coverage": 0.82,
+      "coverage_gap": 0.159,
+      "mean_width": 2.459,
+      "mean_interval_score": 3.195
+    },
+    "width_matched_global": {
+      "true_marginal": 0.943,
+      "worst_region_coverage": 0.864,
+      "coverage_gap": 0.128,
+      "mean_width": 2.858,
+      "mean_interval_score": 3.331
+    }
+  },
+  "mild": {
+    "split": {
+      "true_marginal": 0.807,
+      "worst_region_coverage": 0.561,
+      "coverage_gap": 0.402,
+      "mean_width": 2.231,
+      "mean_interval_score": 5.0
+    },
+    "region_mondrian": {
+      "true_marginal": 0.851,
+      "worst_region_coverage": 0.59,
+      "coverage_gap": 0.388,
+      "mean_width": 2.697,
+      "mean_interval_score": 4.841
+    },
+    "normalized": {
+      "true_marginal": 0.887,
+      "worst_region_coverage": 0.736,
+      "coverage_gap": 0.233,
+      "mean_width": 2.833,
+      "mean_interval_score": 4.088
+    },
+    "di_normalized": {
+      "true_marginal": 0.857,
+      "worst_region_coverage": 0.705,
+      "coverage_gap": 0.254,
+      "mean_width": 2.515,
+      "mean_interval_score": 3.906
+    },
+    "cqr": {
+      "true_marginal": 0.882,
+      "worst_region_coverage": 0.722,
+      "coverage_gap": 0.247,
+      "mean_width": 2.889,
+      "mean_interval_score": 4.245
+    },
+    "di_mondrian": {
+      "true_marginal": 0.881,
+      "worst_region_coverage": 0.71,
+      "coverage_gap": 0.264,
+      "mean_width": 2.732,
+      "mean_interval_score": 4.13
+    },
+    "di_cqr": {
+      "true_marginal": 0.93,
+      "worst_region_coverage": 0.82,
+      "coverage_gap": 0.165,
+      "mean_width": 3.387,
+      "mean_interval_score": 4.131
+    },
+    "localized": {
+      "true_marginal": 0.831,
+      "worst_region_coverage": 0.631,
+      "coverage_gap": 0.326,
+      "mean_width": 2.318,
+      "mean_interval_score": 4.401
+    },
+    "geo_localized": {
+      "true_marginal": 0.811,
+      "worst_region_coverage": 0.602,
+      "coverage_gap": 0.342,
+      "mean_width": 2.205,
+      "mean_interval_score": 4.723
+    },
+    "weighted_oracle": {
+      "true_marginal": 0.932,
+      "worst_region_coverage": 0.827,
+      "coverage_gap": 0.162,
+      "mean_width": 9.084,
+      "mean_interval_score": 9.746
+    },
+    "weighted_estimated": {
+      "true_marginal": 0.894,
+      "worst_region_coverage": 0.724,
+      "coverage_gap": 0.263,
+      "mean_width": 4.409,
+      "mean_interval_score": 5.751
+    },
+    "width_matched_global": {
+      "true_marginal": 0.915,
+      "worst_region_coverage": 0.734,
+      "coverage_gap": 0.262,
+      "mean_width": 3.387,
+      "mean_interval_score": 4.65
+    }
+  },
+  "moderate": {
+    "split": {
+      "true_marginal": 0.581,
+      "worst_region_coverage": 0.247,
+      "coverage_gap": 0.647,
+      "mean_width": 1.796,
+      "mean_interval_score": 11.056
+    },
+    "region_mondrian": {
+      "true_marginal": 0.616,
+      "worst_region_coverage": 0.254,
+      "coverage_gap": 0.662,
+      "mean_width": 2.08,
+      "mean_interval_score": 10.597
+    },
+    "normalized": {
+      "true_marginal": 0.803,
+      "worst_region_coverage": 0.54,
+      "coverage_gap": 0.42,
+      "mean_width": 3.288,
+      "mean_interval_score": 6.883
+    },
+    "di_normalized": {
+      "true_marginal": 0.784,
+      "worst_region_coverage": 0.554,
+      "coverage_gap": 0.387,
+      "mean_width": 3.218,
+      "mean_interval_score": 6.284
+    },
+    "cqr": {
+      "true_marginal": 0.79,
+      "worst_region_coverage": 0.506,
+      "coverage_gap": 0.455,
+      "mean_width": 3.209,
+      "mean_interval_score": 7.09
+    },
+    "di_mondrian": {
+      "true_marginal": 0.752,
+      "worst_region_coverage": 0.453,
+      "coverage_gap": 0.502,
+      "mean_width": 2.821,
+      "mean_interval_score": 7.664
+    },
+    "di_cqr": {
+      "true_marginal": 0.856,
+      "worst_region_coverage": 0.607,
+      "coverage_gap": 0.378,
+      "mean_width": 3.787,
+      "mean_interval_score": 6.373
+    },
+    "localized": {
+      "true_marginal": 0.67,
+      "worst_region_coverage": 0.364,
+      "coverage_gap": 0.556,
+      "mean_width": 2.275,
+      "mean_interval_score": 8.822
+    },
+    "geo_localized": {
+      "true_marginal": 0.619,
+      "worst_region_coverage": 0.31,
+      "coverage_gap": 0.574,
+      "mean_width": 2.007,
+      "mean_interval_score": 9.833
+    },
+    "weighted_oracle": {
+      "true_marginal": 0.968,
+      "worst_region_coverage": 0.903,
+      "coverage_gap": 0.095,
+      "mean_width": 28.5,
+      "mean_interval_score": 28.8
+    },
+    "weighted_estimated": {
+      "true_marginal": 0.918,
+      "worst_region_coverage": 0.784,
+      "coverage_gap": 0.206,
+      "mean_width": 21.524,
+      "mean_interval_score": 22.652
+    },
+    "width_matched_global": {
+      "true_marginal": 0.817,
+      "worst_region_coverage": 0.513,
+      "coverage_gap": 0.482,
+      "mean_width": 3.787,
+      "mean_interval_score": 7.599
+    }
+  },
+  "severe": {
+    "split": {
+      "true_marginal": 0.445,
+      "worst_region_coverage": 0.146,
+      "coverage_gap": 0.668,
+      "mean_width": 1.468,
+      "mean_interval_score": 17.024
+    },
+    "region_mondrian": {
+      "true_marginal": 0.475,
+      "worst_region_coverage": 0.138,
+      "coverage_gap": 0.721,
+      "mean_width": 1.663,
+      "mean_interval_score": 16.532
+    },
+    "normalized": {
+      "true_marginal": 0.669,
+      "worst_region_coverage": 0.346,
+      "coverage_gap": 0.584,
+      "mean_width": 2.839,
+      "mean_interval_score": 11.167
+    },
+    "di_normalized": {
+      "true_marginal": 0.728,
+      "worst_region_coverage": 0.464,
+      "coverage_gap": 0.467,
+      "mean_width": 3.703,
+      "mean_interval_score": 8.36
+    },
+    "cqr": {
+      "true_marginal": 0.697,
+      "worst_region_coverage": 0.358,
+      "coverage_gap": 0.582,
+      "mean_width": 3.029,
+      "mean_interval_score": 9.943
+    },
+    "di_mondrian": {
+      "true_marginal": 0.605,
+      "worst_region_coverage": 0.283,
+      "coverage_gap": 0.62,
+      "mean_width": 2.429,
+      "mean_interval_score": 12.595
+    },
+    "di_cqr": {
+      "true_marginal": 0.768,
+      "worst_region_coverage": 0.449,
+      "coverage_gap": 0.525,
+      "mean_width": 3.584,
+      "mean_interval_score": 8.761
+    },
+    "localized": {
+      "true_marginal": 0.522,
+      "worst_region_coverage": 0.203,
+      "coverage_gap": 0.661,
+      "mean_width": 1.964,
+      "mean_interval_score": 14.512
+    },
+    "geo_localized": {
+      "true_marginal": 0.472,
+      "worst_region_coverage": 0.151,
+      "coverage_gap": 0.662,
+      "mean_width": 1.647,
+      "mean_interval_score": 15.995
+    },
+    "weighted_oracle": {
+      "true_marginal": 0.966,
+      "worst_region_coverage": 0.906,
+      "coverage_gap": 0.094,
+      "mean_width": 36.4,
+      "mean_interval_score": 36.79
+    },
+    "weighted_estimated": {
+      "true_marginal": 0.914,
+      "worst_region_coverage": 0.762,
+      "coverage_gap": 0.231,
+      "mean_width": 29.74,
+      "mean_interval_score": 31.118
+    },
+    "width_matched_global": {
+      "true_marginal": 0.718,
+      "worst_region_coverage": 0.386,
+      "coverage_gap": 0.589,
+      "mean_width": 3.584,
+      "mean_interval_score": 10.864
+    }
+  }
+}

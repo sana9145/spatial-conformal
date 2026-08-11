@@ -1,0 +1,12 @@
+# Core dependencies for the simulation, Meuse, robustness, and aggregation code.
+# Python 3.10+ recommended.
+numpy>=1.23
+pandas>=1.5
+scipy>=1.9
+scikit-learn>=1.1        # HistGradientBoostingRegressor(loss="quantile") needs >=1.1
+matplotlib>=3.6
+scikit-gstat>=1.0        # bundled Meuse dataset for run_meuse.py
+
+# Only needed to rebuild the LUCAS analysis dataset from raw ESDAC files
+# (prep_lucas.py); not required for the simulation, Meuse, or robustness runs.
+geopandas>=0.12
