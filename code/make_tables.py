@@ -139,6 +139,22 @@ def lucas_table():
     open(os.path.join(PAP, "table_lucas.tex"), "w").write("\n".join(lines))
 
 
+def clip_table():
+    C = pd.read_csv(os.path.join(RES, "sim_clip_summary.csv"))
+    def v(rg, grp, col, dec=2):
+        r = C[(C.regime == rg) & (C.group == grp)].iloc[0]
+        return f"{r[col]:.{dec}f}"
+    lines = [r"\begin{tabular}{l cccc}", r"\toprule",
+             r"Regime & Frac.\ clipped & Cov.\ (clipped) & Cov.\ (unclipped) & IntScore (clip/unclip) \\",
+             r"\midrule"]
+    for rg in ["none", "mild", "moderate", "severe"]:
+        lines.append(f"{rg} & {v(rg,'clipped','frac_mean')} & {v(rg,'clipped','coverage_mean')} & "
+                     f"{v(rg,'unclipped','coverage_mean')} & "
+                     f"{v(rg,'clipped','mean_interval_score',1)}\\,/\\,{v(rg,'unclipped','mean_interval_score',1)} \\\\")
+    lines += [r"\bottomrule", r"\end{tabular}"]
+    open(os.path.join(PAP, "table_clip.tex"), "w").write("\n".join(lines))
+
+
 def headline():
     h = {}
     for rg in ["none", "mild", "moderate", "severe"]:
@@ -150,5 +166,5 @@ def headline():
 
 if __name__ == "__main__":
     main_table(); controls_table(); width_table(); paired_table(); ablation_table()
-    meuse_table(); bridge_table(); lucas_table(); headline()
+    meuse_table(); bridge_table(); lucas_table(); clip_table(); headline()
     print("wrote LaTeX tables + headline_numbers.json")

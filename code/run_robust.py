@@ -74,10 +74,12 @@ def one_run(regime, seed):
         "weighted_oracle": CF.weighted_split(mu_c, yc, 1.0/p_sel[cal], mu_all, 1.0/p_sel, ALPHA, cap=cap),
         "width_matched_global": CF.width_matched_global(mu_all, float(np.mean(dicqr[2]))*2),
     }
-    res = {"regime": regime, "seed": seed, "methods": {}}
+    # HELD-OUT evaluation: unmonitored cells only (exclude fitting+calibration).
+    ev = np.setdiff1d(np.arange(len(y)), mon)
+    res = {"regime": regime, "seed": seed, "n_eval": int(len(ev)), "methods": {}}
     for name, (lo, hi, half) in iv.items():
-        rt = MET.per_region(reg, y, lo, hi, ALPHA)
-        res["methods"][name] = MET.summarize(rt, y, lo, hi, ALPHA, NOMINAL)
+        rt = MET.per_region(reg[ev], y[ev], lo[ev], hi[ev], ALPHA)
+        res["methods"][name] = MET.summarize(rt, y[ev], lo[ev], hi[ev], ALPHA, NOMINAL)
     return res
 
 

@@ -1,0 +1,45 @@
+# LaTeX build artifacts
+*.aux
+*.log
+*.out
+*.bbl
+*.blg
+*.synctex.gz
+# scratch / logs
+*.txt
+!requirements.txt
+__pycache__/
+*.pyc
+# temp page renders
+p[0-9]*-*.png
+pg*.png
+q1*.png
+_pg*.png
+_c*.png
+
+# Manuscripts kept outside the public reproducibility repository
+paper/
+workshop/
+MANUSCRIPT/
+paper_UPDATED_*.pdf
+workshop_ANON_*.pdf
+
+# Development history — not part of the public reproducibility record
+CHANGELOG.md
+REPORT.md
+GITHUB_SETUP.md
+SUBMISSION_README.md
+
+# Local/raw LUCAS source data — do NOT redistribute (JRC/ESDAC terms)
+lucas_prepared.csv
+data/
+LUCAS2015_*.csv
+LUCAS2015_*/
+*.shp
+*.shx
+*.dbf
+*.prj
+# (Note: lucas_raw.jsonl, lucas_summary.csv, lucas_sig.json are DERIVED
+#  experimental outputs, not original observations — these ARE published.)
+
+results/_prev_v3/

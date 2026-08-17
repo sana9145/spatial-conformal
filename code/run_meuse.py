@@ -121,7 +121,17 @@ def one_rep(df, seed):
         "geo_localized": CF.localized_tuned(mu_c, yc, coords_c, mu_t, coords_t, ALPHA),
         "weighted_estimated": CF.weighted_split(mu_c, yc, w_c, mu_t, w_t, ALPHA, cap=cap),
     }
-    out = {"seed": seed, "n_test": int(len(test)), "methods": {}}
+    # DI-CQR bin diagnostics: exact fit/cal sizes, per-bin calibration counts,
+    # how many of the K bins fell back to the global quantile (count < min_n=6),
+    # and the fraction of test queries clipped into the top DI bin.
+    E_c = np.maximum(qlo_c - yc, yc - qhi_c)
+    edges_m, _, counts_m = CF._di_bin_quantiles(E_c, di_c, ALPHA, K, True, min_n=6)
+    n_fallback = int(sum(c < 6 for c in counts_m))
+    frac_clip = float(np.mean(di_t > di_c.max()))
+    out = {"seed": seed, "n_test": int(len(test)),
+           "n_fit": int(len(fit)), "n_cal": int(len(cal)), "K": K, "min_n": 6,
+           "bin_counts": [int(c) for c in counts_m], "n_fallback_bins": n_fallback,
+           "frac_test_clipped": frac_clip, "methods": {}}
     for name, (lo, hi, half) in iv.items():
         rt = MET.per_region(reg_t, yt, lo, hi, ALPHA)
         covs = np.array([v["coverage"] for v in rt.values()])
@@ -165,9 +175,23 @@ def main():
             rows.append(dict(method=m, metric=k, mean=v.mean(), sd=v.std(ddof=1),
                              ci_lo=v.mean()-t*se, ci_hi=v.mean()+t*se))
     pd.DataFrame(rows).to_csv(os.path.join(RES, "meuse_summary.csv"), index=False)
+
+    # DI-CQR bin diagnostics (exact sizes + fallback frequency), averaged over reps
+    diag = dict(
+        n_fit=int(np.median([r.get("n_fit", np.nan) for r in runs])),
+        n_cal=int(np.median([r.get("n_cal", np.nan) for r in runs])),
+        K=int(runs[0].get("K", 4)), min_n=int(runs[0].get("min_n", 6)),
+        mean_bin_count=float(np.mean([np.mean(r["bin_counts"]) for r in runs if "bin_counts" in r])),
+        min_bin_count=float(np.mean([min(r["bin_counts"]) for r in runs if "bin_counts" in r])),
+        mean_fallback_bins=float(np.mean([r.get("n_fallback_bins", 0) for r in runs])),
+        frac_reps_any_fallback=float(np.mean([r.get("n_fallback_bins", 0) > 0 for r in runs])),
+        mean_frac_test_clipped=float(np.mean([r.get("frac_test_clipped", np.nan) for r in runs])))
+    json.dump(diag, open(os.path.join(RES, "meuse_diag.json"), "w"), indent=2)
+
     # print
     piv = pd.DataFrame(rows).pivot(index="method", columns="metric", values="mean")
     print(piv.loc[METHODS, ["marginal","worst_region","coverage_gap","mean_width","mean_interval_score"]].round(3).to_string())
+    print("DIAG:", diag)
 
 
 if __name__ == "__main__":

@@ -88,30 +88,30 @@ check("bridge: severe Spearman > 0.9", sp["severe"] > 0.9)
 
 # --- exact numbers quoted in the manuscript prose ---
 quoted = [
-    ("moderate di_normalized IS ~6.3", approx(val("moderate", "di_normalized", "mean_interval_score"), 6.3, 0.1)),
-    ("severe di_normalized IS ~8.4", approx(val("severe", "di_normalized", "mean_interval_score"), 8.4, 0.15)),
-    ("moderate di_cqr IS ~6.4", approx(val("moderate", "di_cqr", "mean_interval_score"), 6.4, 0.1)),
-    ("severe di_cqr IS ~8.8", approx(val("severe", "di_cqr", "mean_interval_score"), 8.8, 0.15)),
-    ("moderate di_cqr marginal ~0.86", approx(val("moderate", "di_cqr", "true_marginal"), 0.86, 0.02)),
-    ("severe di_cqr marginal ~0.77", approx(val("severe", "di_cqr", "true_marginal"), 0.77, 0.02)),
-    ("moderate di_cqr worst ~0.61", approx(val("moderate", "di_cqr", "worst_region_coverage"), 0.61, 0.03)),
-    ("moderate split marginal ~0.58", approx(val("moderate", "split", "true_marginal"), 0.58, 0.02)),
-    ("severe split marginal ~0.44", approx(val("severe", "split", "true_marginal"), 0.44, 0.02)),
-    ("weighted_oracle width moderate ~28.5", approx(val("moderate", "weighted_oracle", "mean_width"), 28.5, 1.0)),
-    ("weighted_oracle width severe ~36.4", approx(val("severe", "weighted_oracle", "mean_width"), 36.4, 1.5)),
+    ("moderate di_normalized IS ~7.1", approx(val("moderate", "di_normalized", "mean_interval_score"), 7.1, 0.15)),
+    ("severe di_normalized IS ~9.6", approx(val("severe", "di_normalized", "mean_interval_score"), 9.6, 0.2)),
+    ("moderate di_cqr IS ~7.2", approx(val("moderate", "di_cqr", "mean_interval_score"), 7.2, 0.15)),
+    ("severe di_cqr IS ~10.1", approx(val("severe", "di_cqr", "mean_interval_score"), 10.1, 0.2)),
+    ("moderate di_cqr marginal ~0.83", approx(val("moderate", "di_cqr", "true_marginal"), 0.83, 0.02)),
+    ("severe di_cqr marginal ~0.73", approx(val("severe", "di_cqr", "true_marginal"), 0.73, 0.02)),
+    ("moderate di_cqr worst ~0.59", approx(val("moderate", "di_cqr", "worst_region_coverage"), 0.59, 0.03)),
+    ("moderate split marginal ~0.51", approx(val("moderate", "split", "true_marginal"), 0.51, 0.02)),
+    ("severe split marginal ~0.35", approx(val("severe", "split", "true_marginal"), 0.35, 0.02)),
+    ("weighted_oracle width moderate ~33.2", approx(val("moderate", "weighted_oracle", "mean_width"), 33.2, 1.5)),
+    ("weighted_oracle width severe ~42.7", approx(val("severe", "weighted_oracle", "mean_width"), 42.7, 2.0)),
     ("meuse di_cqr worst ~0.93", approx(float(M[(M.method=="di_cqr")&(M.metric=="worst_region")]["mean"].iloc[0]), 0.93, 0.03)),
     ("meuse split marginal ~0.93", approx(float(M[(M.method=="split")&(M.metric=="marginal")]["mean"].iloc[0]), 0.93, 0.03)),
-    ("localized IS moderate ~8.8", approx(val("moderate", "localized", "mean_interval_score"), 8.8, 0.3)),
-    ("localized IS severe ~14.5", approx(val("severe", "localized", "mean_interval_score"), 14.5, 0.6)),
+    ("localized IS moderate ~10.1", approx(val("moderate", "localized", "mean_interval_score"), 10.1, 0.4)),
+    ("localized IS severe ~17.0", approx(val("severe", "localized", "mean_interval_score"), 17.0, 0.7)),
     ("bridge spearman mild ~0.68", approx(sp["mild"], 0.68, 0.03)),
     ("bridge spearman moderate ~0.91", approx(sp["moderate"], 0.91, 0.03)),
     ("bridge spearman severe ~0.94", approx(sp["severe"], 0.94, 0.03)),
-    ("di_cqr-localized IS diff moderate ~-2.45",
-     approx(float(P[(P.regime=="moderate")&(P.metric=="mean_interval_score")&(P.baseline=="localized")]["mean_diff"].iloc[0]), -2.45, 0.3)),
-    ("di_cqr-localized IS diff severe ~-5.75",
-     approx(float(P[(P.regime=="severe")&(P.metric=="mean_interval_score")&(P.baseline=="localized")]["mean_diff"].iloc[0]), -5.75, 0.5)),
-    ("meuse localized IS ~1.66", approx(float(M[(M.method=="localized")&(M.metric=="mean_interval_score")]["mean"].iloc[0]), 1.66, 0.05)),
-    ("meuse di_cqr IS ~2.13", approx(float(M[(M.method=="di_cqr")&(M.metric=="mean_interval_score")]["mean"].iloc[0]), 2.13, 0.05)),
+    ("di_cqr-localized IS diff moderate ~-2.93",
+     approx(float(P[(P.regime=="moderate")&(P.metric=="mean_interval_score")&(P.baseline=="localized")]["mean_diff"].iloc[0]), -2.93, 0.3)),
+    ("di_cqr-localized IS diff severe ~-6.87",
+     approx(float(P[(P.regime=="severe")&(P.metric=="mean_interval_score")&(P.baseline=="localized")]["mean_diff"].iloc[0]), -6.87, 0.5)),
+    ("meuse localized IS ~1.66", approx(float(M[(M.method=="localized")&(M.metric=="mean_interval_score")]["mean"].iloc[0]), 1.66, 0.06)),
+    ("meuse di_cqr IS ~2.13", approx(float(M[(M.method=="di_cqr")&(M.metric=="mean_interval_score")]["mean"].iloc[0]), 2.13, 0.06)),
 ]
 for name, cond in quoted:
     check("quoted: " + name, cond)
@@ -134,10 +134,10 @@ if _os.path.exists(_rp):
     check("robust: all DI-vs-{split,localized} IS diffs significant (t & wilcoxon <1e-4)",
           all(v["diff"] < 0 and v["t_p"] < 1e-4 and v["w_p"] < 1e-4 for v in RS.values()))
     for nm, cond in [
-        ("robust di_normalized IS moderate ~6.0", approx(rval("moderate", "di_normalized", "interval_score"), 6.0, 0.3)),
-        ("robust di_normalized IS severe ~8.7", approx(rval("severe", "di_normalized", "interval_score"), 8.7, 0.4)),
-        ("robust split IS severe ~16.6", approx(rval("severe", "split", "interval_score"), 16.6, 0.8)),
-        ("robust localized IS severe ~14.2", approx(rval("severe", "localized", "interval_score"), 14.2, 0.8)),
+        ("robust di_normalized IS moderate ~6.9", approx(rval("moderate", "di_normalized", "interval_score"), 6.9, 0.4)),
+        ("robust di_normalized IS severe ~10.0", approx(rval("severe", "di_normalized", "interval_score"), 10.0, 0.5)),
+        ("robust split IS severe ~19.5", approx(rval("severe", "split", "interval_score"), 19.5, 1.0)),
+        ("robust localized IS severe ~16.6", approx(rval("severe", "localized", "interval_score"), 16.6, 0.9)),
     ]:
         check("quoted: " + nm, cond)
 
@@ -169,6 +169,35 @@ if _os.path.exists(_lp):
         ("lucas di_cqr IS ~4.65", approx(lv("di_cqr", "mean_interval_score"), 4.65, 0.2)),
     ]:
         check("quoted: " + nm, cond)
+
+# --- held-out evaluation: sim raw runs score only unmonitored cells ---
+_sr = _os.path.join(RES, "sim_raw.jsonl")
+if _os.path.exists(_sr):
+    r0 = json.loads(open(_sr).readline())
+    check("sim evaluates held-out cells only (n_eval == 3136 - n_mon)",
+          r0.get("n_eval") == 3136 - r0.get("n_mon", 500) and r0.get("n_mon") == 500)
+
+# --- clipping diagnostics: clipped points under-covered vs unclipped; fraction grows ---
+_cp = _os.path.join(RES, "sim_clip_summary.csv")
+if _os.path.exists(_cp):
+    C = pd.read_csv(_cp)
+    def cl(rg, grp, col):
+        return float(C[(C.regime == rg) & (C.group == grp)].iloc[0][col])
+    check("clip: severe clipped fraction > moderate > mild",
+          cl("severe", "clipped", "frac_mean") > cl("moderate", "clipped", "frac_mean") > cl("mild", "clipped", "frac_mean"))
+    for rg in ["moderate", "severe"]:
+        check(f"[{rg}] clipped points under-covered vs unclipped",
+              cl(rg, "clipped", "coverage_mean") < cl(rg, "unclipped", "coverage_mean"))
+    check("clip: severe clipped coverage ~0.65", approx(cl("severe", "clipped", "coverage_mean"), 0.65, 0.03))
+    check("clip: severe clipped fraction ~0.60", approx(cl("severe", "clipped", "frac_mean"), 0.60, 0.05))
+
+# --- Meuse bin diagnostics: 60 fit / 40 cal, no fallback, ~7% clipped ---
+_md = _os.path.join(RES, "meuse_diag.json")
+if _os.path.exists(_md):
+    D = json.load(open(_md))
+    check("meuse: 60 fit / 40 cal, K=4, min_n=6", D["n_fit"] == 60 and D["n_cal"] == 40 and D["K"] == 4 and D["min_n"] == 6)
+    check("meuse: zero fallback bins (bins stay active, DI-CQR != CQR)", D["mean_fallback_bins"] == 0)
+    check("meuse: ~7% of test queries clipped", approx(D["mean_frac_test_clipped"], 0.067, 0.03))
 
 print("\n" + ("ALL CHECKS PASSED" if not fails else f"{len(fails)} FAILURES: {fails}"))
 raise SystemExit(1 if fails else 0)

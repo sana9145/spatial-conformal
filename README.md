@@ -72,21 +72,28 @@ with paired *t*-test and Wilcoxon signed-rank significance where relevant.
 
 **Simulation (nominal 0.90, 30 seeds):**
 
+All methods are scored **only on held-out unmonitored cells** (the fitting and
+calibration cells are excluded from evaluation).
+
 | Regime | Method | Marginal coverage | Worst-region coverage |
 |---|---|---|---|
-| No bias | split | 0.92 | 0.83 |
-| No bias | DI-CQR | 0.94 | 0.88 |
-| Moderate | split | 0.58 | 0.25 |
-| Moderate | DI-CQR | 0.86 | 0.61 |
-| Severe | split | 0.45 | 0.15 |
-| Severe | DI-CQR | 0.77 | 0.45 |
+| No bias | split | 0.91 | 0.81 |
+| No bias | DI-CQR | 0.94 | 0.87 |
+| Moderate | split | 0.51 | 0.24 |
+| Moderate | DI-CQR | 0.83 | 0.59 |
+| Severe | split | 0.35 | 0.14 |
+| Severe | DI-CQR | 0.73 | 0.42 |
 
 Under no bias, split conformal is already near-nominal — confirming the
 failure under bias is a calibration/test distribution mismatch, not a flaw in
 the base estimator. DI-conditional methods give the best interval score among
 practical (non-oracle) methods and consistently improve worst-region coverage,
 without matching nominal coverage or beating oracle weighted conformal (which
-needs 6–10× wider intervals to lead on coverage).
+needs 8–11× wider intervals to lead on coverage). A clipping diagnostic is
+reported honestly: queries whose dissimilarity exceeds the calibration range are
+assigned the widest bin and remain under-covered (severe bias: clipped-point
+coverage 0.65 vs 0.85 for unclipped points), the unavoidable cost of deep
+extrapolation.
 
 **Meuse (real data, nominal 0.90, 30 repeats):** split marginal 0.93 /
 worst-region 0.84; DI-CQR marginal 0.97 / worst-region 0.93. The shift here is
@@ -105,11 +112,11 @@ materially affects robustness, and DI-CQR's binning/clipping avoids the
 pathology that DI-normalized exhibits at scale.
 
 **Robustness (second mean-model family — histogram gradient boosting):** the
-same pattern holds in the moderate/severe simulation benchmark when the mean
-model is histogram gradient boosting rather than random forest (moderate: split
-marginal 0.57/worst 0.23 vs. DI-CQR 0.85/0.61; severe: split 0.44/0.14 vs.
-DI-CQR 0.77/0.45), indicating the finding is not an artifact of one mean-model
-family.
+same pattern holds in the moderate/severe simulation benchmark (held-out cells)
+when the mean model is histogram gradient boosting rather than random forest
+(moderate: split marginal 0.49/worst 0.22 vs. DI-CQR 0.83/0.59; severe: split
+0.34/0.12 vs. DI-CQR 0.73/0.42), indicating the finding is not an artifact of one
+mean-model family.
 
 **Mechanistic bridge:** under accessibility-driven selection, the inverse
 selection probability `1/p_sel(x)` is the covariate-shift weight used by

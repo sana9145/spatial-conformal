@@ -124,6 +124,34 @@ def main():
                           pearson_DI_logInvPsel_mean=float(np.mean(pe))))
     pd.DataFrame(brows).to_csv(os.path.join(RES, "sim_bridge.csv"), index=False)
 
+    # ---- DI-CQR clipping diagnostics (queries above max calibration DI -> top bin)
+    crows = []
+    for r in runs:
+        c = r.get("clip")
+        if not c:
+            continue
+        for grp in ["clipped", "unclipped"]:
+            d = c[grp]
+            crows.append(dict(regime=r["regime"], seed=r["seed"], group=grp,
+                              frac=d["frac"], n=d["n"], coverage=d["coverage"],
+                              mean_width=d["mean_width"],
+                              mean_interval_score=d["mean_interval_score"]))
+    if crows:
+        clip = pd.DataFrame(crows)
+        clip.to_csv(os.path.join(RES, "sim_clip_per_run.csv"), index=False)
+        csum = []
+        for rg in REGIME_ORDER:
+            for grp in ["clipped", "unclipped"]:
+                sub = clip[(clip.regime == rg) & (clip.group == grp)]
+                cov = sub["coverage"].dropna().to_numpy()
+                csum.append(dict(regime=rg, group=grp,
+                                 frac_mean=float(sub["frac"].mean()),
+                                 frac_sd=float(sub["frac"].std(ddof=1)),
+                                 coverage_mean=float(cov.mean()) if len(cov) else float("nan"),
+                                 mean_width=float(sub["mean_width"].dropna().mean()),
+                                 mean_interval_score=float(sub["mean_interval_score"].dropna().mean())))
+        pd.DataFrame(csum).to_csv(os.path.join(RES, "sim_clip_summary.csv"), index=False)
+
     # ---- representative fields for maps (severe seed 0)
     import run_sim as R
     rep = R.one_run("severe", 0, save_fields=True)

@@ -136,11 +136,38 @@ def one_run(regime, seed, save_fields=False):
         "weighted_estimated": CF.weighted_split(mu_c, yc, w_est_c, mu_all, w_est_all, ALPHA, cap=cap),
         "width_matched_global": CF.width_matched_global(mu_all, di_cqr_half_mean * 2),
     }
-    res = {"regime": regime, "bias": bias, "seed": seed, "methods": {}}
+    # HELD-OUT evaluation: score only on UNMONITORED cells (exclude the fitting
+    # and calibration cells, which are not held out). Meuse/LUCAS already do this.
+    ev = np.setdiff1d(np.arange(len(y)), mon)
+    res = {"regime": regime, "bias": bias, "seed": seed,
+           "n_eval": int(len(ev)), "n_mon": int(len(mon)), "methods": {}}
     for name, (lo, hi, half) in intervals.items():
-        s, _ = _summ(reg, y, lo, hi, di_all)
+        s, _ = _summ(reg[ev], y[ev], lo[ev], hi[ev], di_all[ev])
         res["methods"][name] = s
     res["di_cqr_bin_counts"] = di_cqr_intervals[3]
+
+    # ---- clipping diagnostics (DI-CQR): queries whose DI exceeds the maximum
+    # calibration DI are assigned the top (widest) bin. Report how many held-out
+    # points are clipped and their coverage / width / interval score, so the
+    # extrapolative tail is not hidden behind the marginal average.
+    lo_d, hi_d, _ = intervals["di_cqr"]
+    di_cal_max = float(di_c.max())
+    di_ev = di_all[ev]
+    clipped = di_ev > di_cal_max
+    ycov = (y[ev] >= lo_d[ev]) & (y[ev] <= hi_d[ev])
+    isc = CF._interval_score(y[ev], lo_d[ev], hi_d[ev], ALPHA)
+    wid = hi_d[ev] - lo_d[ev]
+
+    def _cd(mask):
+        if int(mask.sum()) == 0:
+            return dict(n=0, frac=0.0, coverage=None,
+                        mean_width=None, mean_interval_score=None)
+        return dict(n=int(mask.sum()), frac=float(mask.mean()),
+                    coverage=float(ycov[mask].mean()),
+                    mean_width=float(wid[mask].mean()),
+                    mean_interval_score=float(isc[mask].mean()))
+    res["clip"] = {"clipped": _cd(clipped), "unclipped": _cd(~clipped),
+                   "di_cal_max": di_cal_max}
 
     # DI vs inverse selection weight bridge (only meaningful when biased)
     if bias > 0:
@@ -162,7 +189,7 @@ def one_run(regime, seed, save_fields=False):
             bq = np.clip(np.digitize(di_all, edges) - 1, 0, K - 1)
             Qv = Qb[bq]
             lo, hi = qlo_all - Qv, qhi_all + Qv
-            s, _ = _summ(reg, y, lo, hi, di_all)
+            s, _ = _summ(reg[ev], y[ev], lo[ev], hi[ev], di_all[ev])
             s["min_bin_count"] = int(min(counts)); s["mean_bin_count"] = float(np.mean(counts))
             abl[f"di_cqr_K{K}_mono{int(mono)}"] = s
     res["ablation"] = abl
@@ -175,11 +202,11 @@ def one_run(regime, seed, save_fields=False):
         rows = []
         for mult in MULTS:
             lo2 = mu_center - half * mult; hi2 = mu_center + half * mult
-            rt = MET.per_region(reg, y, lo2, hi2, ALPHA)
+            rt = MET.per_region(reg[ev], y[ev], lo2[ev], hi2[ev], ALPHA)
             covs = np.array([v["coverage"] for v in rt.values()])
-            rows.append(dict(mult=mult, marginal=MET.marginal_coverage(y, lo2, hi2),
+            rows.append(dict(mult=mult, marginal=MET.marginal_coverage(y[ev], lo2[ev], hi2[ev]),
                              worst=float(covs.min()),
-                             mean_width=float(np.mean(hi2 - lo2))))
+                             mean_width=float(np.mean((hi2 - lo2)[ev]))))
         sweep[name] = rows
     res["sweep"] = sweep
 
@@ -189,8 +216,9 @@ def one_run(regime, seed, save_fields=False):
                               in_split=((y >= lo_s) & (y <= hi_s)).astype(int).tolist(),
                               in_dicqr=((y >= lo_d) & (y <= hi_d)).astype(int).tolist(),
                               half_split=(0.5*(hi_s-lo_s)).tolist(), half_dicqr=hf_d.tolist(),
-                              cal=cal.tolist(), coords=coords.tolist(),
-                              inv_psel=(1.0/p_sel).tolist())
+                              cal=cal.tolist(), fit=fit.tolist(), mon=mon.tolist(),
+                              coords=coords.tolist(), access=access.tolist(),
+                              p_sel=p_sel.tolist(), inv_psel=(1.0/p_sel).tolist())
     return res
 
 

@@ -1,0 +1,11 @@
+{
+  "n_fit": 60,
+  "n_cal": 40,
+  "K": 4,
+  "min_n": 6,
+  "mean_bin_count": 10.0,
+  "min_bin_count": 10.0,
+  "mean_fallback_bins": 0.0,
+  "frac_reps_any_fallback": 0.0,
+  "mean_frac_test_clipped": 0.06666666666666667
+}

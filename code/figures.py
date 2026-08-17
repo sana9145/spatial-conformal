@@ -183,4 +183,45 @@ fig.suptitle("Why DI-conditioning works: the Dissimilarity Index is a computable
              "covariate-shift weight — and only strongly so once bias is large", y=1.03)
 fig.tight_layout(); fig.savefig(os.path.join(FIG, "fig8_bridge.png"), bbox_inches="tight"); plt.close(fig)
 
+
+# ---- Fig 9: spatial experimental setup (severe run) ----
+# Central spatial problem, visualised: where monitoring concentrates, which cells
+# are held out for evaluation, the region partition, and the DI surface.
+Gm = F["GRID"]
+def _grid(a): return np.array(a).reshape(Gm, Gm)
+coords = np.array(F["coords"])
+fit_i = np.array(F["fit"]); cal_i = np.array(F["cal"])
+reg_g = _grid(F["reg"]); ext = [0, 1, 0, 1]
+fig, ax = plt.subplots(1, 3, figsize=(14, 4.5))
+
+# (a) selection intensity + region boundaries + monitored sites
+im0 = ax[0].imshow(_grid(F["p_sel"]), origin="lower", extent=ext, cmap="viridis")
+ax[0].contour(np.linspace(0, 1, Gm), np.linspace(0, 1, Gm), reg_g,
+              levels=np.arange(reg_g.max()+1)+0.5, colors="w", linewidths=0.6, alpha=0.6)
+ax[0].scatter(coords[fit_i, 0], coords[fit_i, 1], s=6, c="#ff7f0e", lw=0, label="fitting")
+ax[0].scatter(coords[cal_i, 0], coords[cal_i, 1], s=6, c="cyan", lw=0, label="calibration")
+ax[0].set_title("(a) Monitoring-selection intensity $p_{sel}$\n+ region boundaries + monitored sites")
+ax[0].legend(loc="upper right", fontsize=7, framealpha=0.8); fig.colorbar(im0, ax=ax[0], fraction=.046)
+
+# (b) held-out evaluation cells (unmonitored) vs monitored
+mon_mask = np.zeros(Gm*Gm, bool); mon_mask[np.array(F["mon"])] = True
+panel = np.where(mon_mask, 1.0, 0.15).reshape(Gm, Gm)  # dark = monitored, light = held-out eval
+ax[1].imshow(panel, origin="lower", extent=ext, cmap="Greys", vmin=0, vmax=1.0)
+ax[1].contour(np.linspace(0, 1, Gm), np.linspace(0, 1, Gm), reg_g,
+              levels=np.arange(reg_g.max()+1)+0.5, colors="#e45756", linewidths=0.7, alpha=0.8)
+ax[1].scatter(coords[mon_mask, 0], coords[mon_mask, 1], s=4, c="#1f77b4", lw=0)
+ax[1].set_title("(b) Held-out evaluation cells (light)\nmonitored cells excluded (dark, blue points)")
+
+# (c) DI surface + region boundaries
+im2 = ax[2].imshow(_grid(F["di"]), origin="lower", extent=ext, cmap="magma")
+ax[2].contour(np.linspace(0, 1, Gm), np.linspace(0, 1, Gm), reg_g,
+              levels=np.arange(reg_g.max()+1)+0.5, colors="w", linewidths=0.6, alpha=0.6)
+ax[2].set_title("(c) Dissimilarity Index surface\n(high = far from fitting data)")
+fig.colorbar(im2, ax=ax[2], fraction=.046)
+for a in ax: a.set_xticks([]); a.set_yticks([])
+fig.suptitle("The spatial problem (severe-bias run): monitoring concentrates in accessible cells (a); "
+             "models are evaluated only on the\nunmonitored majority (b); dissimilarity is high exactly "
+             "where monitoring is sparse (c) — the signal DI-conditioning exploits", y=1.05)
+fig.tight_layout(); fig.savefig(os.path.join(FIG, "fig9_setup.png"), bbox_inches="tight"); plt.close(fig)
+
 print("figures written:", sorted(os.listdir(FIG)))
