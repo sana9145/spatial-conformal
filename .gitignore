@@ -17,6 +17,10 @@ q1*.png
 _pg*.png
 _c*.png
 
+# Scratch backups created during reruns
+results/_prev_v3/
+_prev_*/
+
 # Manuscripts kept outside the public reproducibility repository
 paper/
 workshop/
@@ -41,5 +45,3 @@ LUCAS2015_*/
 *.prj
 # (Note: lucas_raw.jsonl, lucas_summary.csv, lucas_sig.json are DERIVED
 #  experimental outputs, not original observations — these ARE published.)
-
-results/_prev_v3/

@@ -58,9 +58,12 @@ K_MAIN = 5
 SEEDS = 30
 REGIMES = {"none": 0.0, "mild": 2.0, "moderate": 6.0, "severe": 12.0}
 RF = dict(n_estimators=150, n_jobs=-1, min_samples_leaf=3, random_state=0)
-BASE_METHODS = ["split", "normalized", "di_normalized", "region_mondrian",
-                "di_mondrian", "cqr", "di_cqr", "localized", "geo_localized",
-                "weighted_oracle", "weighted_estimated", "width_matched_global"]
+BASE_METHODS = ["split", "normalized", "di_normalized", "di_normalized_auto",
+                "region_mondrian", "di_mondrian", "cqr", "di_cqr", "di_cqr_auto",
+                "localized", "localized_cqr", "geo_localized", "weighted_oracle",
+                "weighted_estimated", "width_matched_global"]
+KAPPAS = [0.1, 0.25, 0.5, 1.0]
+REGION_KS = [2, 3, 4]
 ABLATION_K = [3, 4, 5, 6, 8, 10]
 MULTS = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0]
 BUDGET = 37.0
@@ -120,31 +123,73 @@ def one_run(regime, seed, save_fields=False):
 
     di_cqr_intervals = CF.di_cqr(qlo_c, qhi_c, yc, di_c, qlo_all, qhi_all, di_all,
                                  ALPHA, K=K_MAIN, monotone=True, return_info=True)
-    di_cqr_half_mean = float(np.mean(di_cqr_intervals[2]))
+    # HELD-OUT evaluation set: score only on UNMONITORED cells (the fitting and
+    # calibration cells are not held out). Defined here so the width-matched global
+    # baseline is matched to DI-CQR's mean width ON THE EVALUATION SET (otherwise the
+    # two mean widths differ and the "matched" control is not actually matched).
+    ev = np.setdiff1d(np.arange(len(y)), mon)
+    di_cqr_half_mean = float(np.mean(di_cqr_intervals[2][ev]))
+
+    # calibration-valid hyperparameter selection (no test labels; Sec. auto)
+    K_sel = CF.select_K_di_cqr(qlo_c, qhi_c, yc, di_c, ALPHA, min_n=15, seed=seed)
+    kap_sel = CF.select_kappa_di_normalized(mu_c, yc, di_c, ALPHA, seed=seed)
 
     intervals = {
         "split": CF.split(mu_c, yc, mu_all, ALPHA),
         "normalized": CF.normalized(mu_c, yc, sig_c, mu_all, sig_all, ALPHA),
         "di_normalized": CF.di_normalized(mu_c, yc, di_c, mu_all, di_all, ALPHA),
+        "di_normalized_auto": CF.di_normalized(mu_c, yc, di_c, mu_all, di_all, ALPHA, floor=kap_sel),
+        "di_cqr_auto": CF.di_cqr(qlo_c, qhi_c, yc, di_c, qlo_all, qhi_all, di_all, ALPHA, K=K_sel),
         "region_mondrian": CF.region_mondrian(mu_c, yc, reg[cal], mu_all, reg, ALPHA),
         "di_mondrian": CF.di_mondrian(mu_c, yc, di_c, mu_all, di_all, ALPHA, K=K_MAIN),
         "cqr": CF.cqr(qlo_c, qhi_c, yc, qlo_all, qhi_all, ALPHA),
         "di_cqr": di_cqr_intervals[:3],
         "localized": CF.localized_tuned(mu_c, yc, feat_c, mu_all, feat_all, ALPHA),
+        "localized_cqr": CF.localized_cqr(qlo_c, qhi_c, yc, feat_c, qlo_all, qhi_all, feat_all, ALPHA),
         "geo_localized": CF.localized_tuned(mu_c, yc, coords[cal], mu_all, coords, ALPHA),
         "weighted_oracle": CF.weighted_split(mu_c, yc, w_oracle_c, mu_all, w_oracle_all, ALPHA, cap=cap),
         "weighted_estimated": CF.weighted_split(mu_c, yc, w_est_c, mu_all, w_est_all, ALPHA, cap=cap),
         "width_matched_global": CF.width_matched_global(mu_all, di_cqr_half_mean * 2),
     }
-    # HELD-OUT evaluation: score only on UNMONITORED cells (exclude the fitting
-    # and calibration cells, which are not held out). Meuse/LUCAS already do this.
-    ev = np.setdiff1d(np.arange(len(y)), mon)
     res = {"regime": regime, "bias": bias, "seed": seed,
            "n_eval": int(len(ev)), "n_mon": int(len(mon)), "methods": {}}
     for name, (lo, hi, half) in intervals.items():
         s, _ = _summ(reg[ev], y[ev], lo[ev], hi[ev], di_all[ev])
         res["methods"][name] = s
     res["di_cqr_bin_counts"] = di_cqr_intervals[3]
+    res["selected"] = {"K": int(K_sel), "kappa": float(kap_sel)}
+
+    # weighted-conformal capped-interval fraction (over held-out cells): oracle
+    # query weights 1/p_sel are +inf where selection probability is zero (accessibility
+    # extrema), giving unbounded weighted quantiles that are capped; report how often.
+    res["weighted_capped"] = {
+        wn: float(np.mean(np.isclose(intervals[wn][2][ev], cap)))
+        for wn in ["weighted_oracle", "weighted_estimated"]}
+
+    # ---- region-definition sensitivity: worst-region coverage (held-out) under
+    # 2x2 / 3x3 / 4x4 partitions, to show the "per-region" headline is not an
+    # artifact of one grid (k=3 reproduces the main worst-region coverage).
+    yv = y[ev]
+    region_sens = {}
+    for name in ["split", "di_normalized", "di_cqr"]:
+        lo, hi, _ = intervals[name]
+        cov = (yv >= lo[ev]) & (yv <= hi[ev])
+        d = {}
+        for k in REGION_KS:
+            rk = region_ids(coords, k)[ev]
+            d[str(k)] = float(min(cov[rk == r].mean() for r in np.unique(rk)))
+        region_sens[name] = d
+    res["region_sens"] = region_sens
+
+    # ---- kappa sensitivity for DI-normalized (worst-region cov + interval score)
+    kappa_sens = {}
+    for kap in KAPPAS:
+        lo, hi, _ = CF.di_normalized(mu_c, yc, di_c, mu_all, di_all, ALPHA, floor=kap)
+        s, _ = _summ(reg[ev], y[ev], lo[ev], hi[ev], di_all[ev])
+        kappa_sens[str(kap)] = dict(worst_region_coverage=s["worst_region_coverage"],
+                                    mean_interval_score=s["mean_interval_score"],
+                                    mean_width=s["mean_width"])
+    res["kappa_sens"] = kappa_sens
 
     # ---- clipping diagnostics (DI-CQR): queries whose DI exceeds the maximum
     # calibration DI are assigned the top (widest) bin. Report how many held-out

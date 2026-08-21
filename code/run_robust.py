@@ -64,6 +64,9 @@ def one_run(regime, seed):
     cap = 3.0 * (yf.max() - yf.min())
 
     dicqr = CF.di_cqr(qlo_c, qhi_c, yc, di_c, qlo_all, qhi_all, di_all, ALPHA, K=K)
+    # held-out evaluation set (unmonitored cells); width-matched baseline matched on it
+    ev = np.setdiff1d(np.arange(len(y)), mon)
+    dicqr_half_ev = float(np.mean(dicqr[2][ev]))
     iv = {
         "split": CF.split(mu_c, yc, mu_all, ALPHA),
         "normalized": CF.normalized(mu_c, yc, sig_c, mu_all, sig_all, ALPHA),
@@ -72,10 +75,8 @@ def one_run(regime, seed):
         "di_cqr": dicqr,
         "localized": CF.localized_tuned(mu_c, yc, feat_c, mu_all, feat_all, ALPHA),
         "weighted_oracle": CF.weighted_split(mu_c, yc, 1.0/p_sel[cal], mu_all, 1.0/p_sel, ALPHA, cap=cap),
-        "width_matched_global": CF.width_matched_global(mu_all, float(np.mean(dicqr[2]))*2),
+        "width_matched_global": CF.width_matched_global(mu_all, dicqr_half_ev * 2),
     }
-    # HELD-OUT evaluation: unmonitored cells only (exclude fitting+calibration).
-    ev = np.setdiff1d(np.arange(len(y)), mon)
     res = {"regime": regime, "seed": seed, "n_eval": int(len(ev)), "methods": {}}
     for name, (lo, hi, half) in iv.items():
         rt = MET.per_region(reg[ev], y[ev], lo[ev], hi[ev], ALPHA)
@@ -135,8 +136,8 @@ def agg():
 
     # LaTeX table (mean +- sd), moderate & severe
     pretty = {"split": "Split", "normalized": "Normalized", "di_normalized": r"\textbf{DI-normalized}",
-              "cqr": "CQR", "di_cqr": "DI-CQR", "localized": "Localized (Guan)",
-              "weighted_oracle": "Weighted (oracle)", "width_matched_global": "Width-matched global"}
+              "cqr": "CQR", "di_cqr": "DI-CQR", "localized": "Kernel-localized",
+              "weighted_oracle": "Weighted (oracle-proxy)", "width_matched_global": "Width-matched global"}
     def cell(rg, m, col, dec=2):
         r = g.reset_index(); r = r[(r.regime == rg) & (r.method == m)].iloc[0]
         return f"{r[col+'_mean']:.{dec}f}\\,$\\pm$\\,{r[col+'_std']:.{dec}f}"

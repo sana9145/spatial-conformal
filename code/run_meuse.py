@@ -30,9 +30,9 @@ CAL_FRAC = 0.4
 K = 4
 REPS = 30
 RF = dict(n_estimators=300, n_jobs=-1, min_samples_leaf=2, random_state=0)
-METHODS = ["split", "normalized", "di_normalized", "region_mondrian",
-           "di_mondrian", "cqr", "di_cqr", "localized", "geo_localized",
-           "weighted_estimated"]
+METHODS = ["split", "normalized", "di_normalized", "di_normalized_auto",
+           "region_mondrian", "di_mondrian", "cqr", "di_cqr", "di_cqr_auto",
+           "localized", "localized_cqr", "geo_localized", "weighted_estimated"]
 
 
 def load():
@@ -109,15 +109,23 @@ def one_rep(df, seed):
     w_c, w_t = est_weights(Xf, Xc, Xt, seed)
     cap = 3.0 * (yf.max() - yf.min())
 
+    # calibration-valid hyperparameter selection (no test labels)
+    K_sel = CF.select_K_di_cqr(qlo_c, qhi_c, yc, di_c, ALPHA,
+                               K_grid=(2, 3, 4, 5, 6), n_folds=5, min_n=6, seed=seed)
+    kap_sel = CF.select_kappa_di_normalized(mu_c, yc, di_c, ALPHA, n_folds=5, seed=seed)
+
     iv = {
         "split": CF.split(mu_c, yc, mu_t, ALPHA),
         "normalized": CF.normalized(mu_c, yc, sig_c, mu_t, sig_t, ALPHA),
         "di_normalized": CF.di_normalized(mu_c, yc, di_c, mu_t, di_t, ALPHA),
+        "di_normalized_auto": CF.di_normalized(mu_c, yc, di_c, mu_t, di_t, ALPHA, floor=kap_sel),
+        "di_cqr_auto": CF.di_cqr(qlo_c, qhi_c, yc, di_c, qlo_t, qhi_t, di_t, ALPHA, K=K_sel, min_n=6),
         "region_mondrian": CF.region_mondrian(mu_c, yc, reg_all[cal], mu_t, reg_t, ALPHA, min_n=6),
         "di_mondrian": CF.di_mondrian(mu_c, yc, di_c, mu_t, di_t, ALPHA, K=K, min_n=6),
         "cqr": CF.cqr(qlo_c, qhi_c, yc, qlo_t, qhi_t, ALPHA),
         "di_cqr": CF.di_cqr(qlo_c, qhi_c, yc, di_c, qlo_t, qhi_t, di_t, ALPHA, K=K, min_n=6),
         "localized": CF.localized_tuned(mu_c, yc, feat_c, mu_t, feat_t, ALPHA),
+        "localized_cqr": CF.localized_cqr(qlo_c, qhi_c, yc, feat_c, qlo_t, qhi_t, feat_t, ALPHA),
         "geo_localized": CF.localized_tuned(mu_c, yc, coords_c, mu_t, coords_t, ALPHA),
         "weighted_estimated": CF.weighted_split(mu_c, yc, w_c, mu_t, w_t, ALPHA, cap=cap),
     }
@@ -131,7 +139,8 @@ def one_rep(df, seed):
     out = {"seed": seed, "n_test": int(len(test)),
            "n_fit": int(len(fit)), "n_cal": int(len(cal)), "K": K, "min_n": 6,
            "bin_counts": [int(c) for c in counts_m], "n_fallback_bins": n_fallback,
-           "frac_test_clipped": frac_clip, "methods": {}}
+           "frac_test_clipped": frac_clip,
+           "selected": {"K": int(K_sel), "kappa": float(kap_sel)}, "methods": {}}
     for name, (lo, hi, half) in iv.items():
         rt = MET.per_region(reg_t, yt, lo, hi, ALPHA)
         covs = np.array([v["coverage"] for v in rt.values()])

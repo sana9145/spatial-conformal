@@ -48,9 +48,18 @@ for rg in ["moderate", "severe"]:
 row = P[(P.regime == "severe") & (P.metric == "true_marginal") & (P.baseline == "weighted_oracle")].iloc[0]
 check("di_cqr marginal significantly LOWER than weighted_oracle (severe)", row["mean_diff"] < 0 and row["p_value"] < 0.05)
 
-# width-matched: di_cqr interval score significantly lower (severe)
-row = P[(P.regime == "severe") & (P.metric == "mean_interval_score") & (P.baseline == "width_matched_global")].iloc[0]
-check("di_cqr interval score sig. lower than width-matched global (severe)", row["mean_diff"] < 0 and row["p_value"] < 0.05)
+# width-matched: MUST be exactly width-matched to di_cqr on the evaluation set
+for rg in ["moderate", "severe"]:
+    dv = val(rg, "di_cqr", "mean_width"); wv = val(rg, "width_matched_global", "mean_width")
+    check(f"[{rg}] width-matched global mean width == di_cqr mean width", approx(dv, wv, 1e-6))
+    dsd = float(S[(S.regime == rg) & (S.method == "di_cqr")].iloc[0]["mean_width_sd"])
+    wsd = float(S[(S.regime == rg) & (S.method == "width_matched_global")].iloc[0]["mean_width_sd"])
+    check(f"[{rg}] width-matched global width SD == di_cqr width SD", approx(dsd, wsd, 1e-6))
+# at matched width, di_cqr interval-score gain is modest: raw-significant moderate, NOT severe
+rmod = P[(P.regime == "moderate") & (P.metric == "mean_interval_score") & (P.baseline == "width_matched_global")].iloc[0]
+rsev = P[(P.regime == "severe") & (P.metric == "mean_interval_score") & (P.baseline == "width_matched_global")].iloc[0]
+check("di_cqr vs width-matched IS: raw-significant moderate, not severe",
+      rmod["mean_diff"] < 0 and rmod["p_value"] < 0.05 and rsev["p_value"] > 0.05)
 
 # di_cqr vs di_normalized interval score NOT significant (both regimes)
 for rg in ["moderate", "severe"]:
@@ -198,6 +207,93 @@ if _os.path.exists(_md):
     check("meuse: 60 fit / 40 cal, K=4, min_n=6", D["n_fit"] == 60 and D["n_cal"] == 40 and D["K"] == 4 and D["min_n"] == 6)
     check("meuse: zero fallback bins (bins stay active, DI-CQR != CQR)", D["mean_fallback_bins"] == 0)
     check("meuse: ~7% of test queries clipped", approx(D["mean_frac_test_clipped"], 0.067, 0.03))
+
+# --- weighted-conformal capped fraction grows with bias (documents the cap dependence) ---
+_wc = _os.path.join(RES, "sim_weighted_capped.csv")
+if _os.path.exists(_wc):
+    WC = pd.read_csv(_wc)
+    def wc(rg, m):
+        r = WC[(WC.regime == rg) & (WC.method == m)]
+        return float(r["mean"].iloc[0]) if len(r) else float("nan")
+    check("weighted-oracle capped fraction grows none<moderate<severe",
+          wc("none", "weighted_oracle") < wc("moderate", "weighted_oracle") < wc("severe", "weighted_oracle"))
+    check("weighted-oracle severe capped fraction ~0.77", approx(wc("severe", "weighted_oracle"), 0.77, 0.05))
+    check("weighted-oracle none capped fraction == 0", wc("none", "weighted_oracle") == 0.0)
+
+# --- Localized-CQR control: DI-CQR beats it (so the gain is not just CQR scores) ---
+if "localized_cqr" in S["method"].values:
+    for rg in ["moderate", "severe"]:
+        ri = P[(P.regime == rg) & (P.metric == "mean_interval_score") & (P.baseline == "localized_cqr")].iloc[0]
+        rw = P[(P.regime == rg) & (P.metric == "worst_region_coverage") & (P.baseline == "localized_cqr")].iloc[0]
+        check(f"[{rg}] di_cqr beats Localized-CQR on interval score (sig.)",
+              ri["mean_diff"] < 0 and ri["p_value"] < 0.05)
+        check(f"[{rg}] di_cqr beats Localized-CQR on worst-region (sig.)",
+              rw["mean_diff"] > 0 and rw["p_value"] < 0.05)
+    # Localized-CQR should itself beat residual-localized (CQR score helps it)
+    check("Localized-CQR interval score < residual-localized (severe)",
+          val("severe", "localized_cqr", "mean_interval_score") < val("severe", "localized", "mean_interval_score"))
+
+# --- mechanism: pooled DI-weight coupling predicts DI-CQR gain ---
+_mp = _os.path.join(RES, "sim_mechanism.csv")
+if _os.path.exists(_mp):
+    MECH = pd.read_csv(_mp)
+    def mrow(grp, gain):
+        r = MECH[(MECH.group == grp) & (MECH.gain == gain)]
+        return r.iloc[0] if len(r) else None
+    r = mrow("pooled_biased", "gain_IS_vs_split")
+    check("mechanism: pooled DI-weight corr predicts DI-CQR IS gain vs split (r>0.4, p<1e-3)",
+          r is not None and r["pearson_r"] > 0.4 and r["p_value"] < 1e-3)
+    r2 = mrow("pooled_biased", "gain_IS_vs_cqr")
+    check("mechanism: pooled corr predicts DI-CQR IS gain vs CQR (r>0.3, p<1e-3)",
+          r2 is not None and r2["pearson_r"] > 0.3 and r2["p_value"] < 1e-3)
+
+# --- mechanism (honest): regime-controlled partial correlation is near zero / n.s. ---
+_mpp = _os.path.join(RES, "sim_mechanism_partial.csv")
+if _os.path.exists(_mpp):
+    MP = pd.read_csv(_mpp)
+    rr = MP[MP.gain == "gain_IS_vs_split"].iloc[0]
+    check("mechanism: within-regime partial corr (IS vs split) is small and n.s.",
+          abs(rr["partial_r"]) < 0.2 and rr["boot_p"] > 0.05)
+
+# --- region sensitivity: di_cqr beats split at every partition granularity ---
+_rp2 = _os.path.join(RES, "sim_region_sens.csv")
+if _os.path.exists(_rp2):
+    RS = pd.read_csv(_rp2)
+    def rw2(rg, m, k):
+        r = RS[(RS.regime == rg) & (RS.method == m) & (RS.k == k)]
+        return float(r["mean"].iloc[0]) if len(r) else float("nan")
+    ok = all(rw2(rg, "di_cqr", k) > rw2(rg, "split", k)
+             for rg in ["moderate", "severe"] for k in [2, 3, 4])
+    check("region sensitivity: di_cqr > split worst-region at every k (moderate+severe)", ok)
+
+# --- kappa sensitivity: monotone (smaller kappa -> higher worst-region), 0.25 present ---
+_kp = _os.path.join(RES, "sim_kappa_sens.csv")
+if _os.path.exists(_kp):
+    KS = pd.read_csv(_kp)
+    def kw(rg, kap, col="worst"):
+        r = KS[(KS.regime == rg) & (np.isclose(KS.kappa, kap))]
+        return float(r[col].iloc[0]) if len(r) else float("nan")
+    check("kappa sensitivity: moderate worst decreases 0.1->1.0 (monotone)",
+          kw("moderate", 0.1) > kw("moderate", 0.25) > kw("moderate", 0.5) > kw("moderate", 1.0))
+    check("kappa sensitivity: a-priori kappa=0.25 present", not np.isnan(kw("moderate", 0.25)))
+
+# --- calibration-valid auto-selection: present, improves DI-normalized, adaptive kappa ---
+if "di_normalized_auto" in S["method"].values:
+    for rg in ["moderate", "severe"]:
+        check(f"[{rg}] auto-kappa improves DI-normalized worst-region coverage",
+              val(rg, "di_normalized_auto", "worst_region_coverage") > val(rg, "di_normalized", "worst_region_coverage"))
+    check("severe: auto-kappa lowers DI-normalized interval score",
+          val("severe", "di_normalized_auto", "mean_interval_score") < val("severe", "di_normalized", "mean_interval_score"))
+    check("di_cqr_auto present and within 0.05 worst-region of a-priori di_cqr (severe)",
+          "di_cqr_auto" in S["method"].values and
+          abs(val("severe", "di_cqr_auto", "worst_region_coverage") - val("severe", "di_cqr", "worst_region_coverage")) < 0.05)
+_selp = _os.path.join(RES, "sim_selection.csv")
+if _os.path.exists(_selp):
+    SEL = pd.read_csv(_selp)
+    def kap(rg):
+        return float(SEL[SEL.regime == rg]["kappa_mean"].iloc[0])
+    check("auto-kappa adapts: mean selected kappa smaller under severe than no bias",
+          kap("severe") < kap("none"))
 
 print("\n" + ("ALL CHECKS PASSED" if not fails else f"{len(fails)} FAILURES: {fails}"))
 raise SystemExit(1 if fails else 0)

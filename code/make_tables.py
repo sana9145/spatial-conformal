@@ -10,12 +10,13 @@ A = pd.read_csv(os.path.join(RES, "sim_ablation_summary.csv"))
 M = pd.read_csv(os.path.join(RES, "meuse_summary.csv"))
 PRETTY = {"split": "Split", "normalized": "Normalized", "di_normalized": "\\textbf{DI-normalized}",
           "region_mondrian": "Spatial-Mondrian", "di_mondrian": "DI-Mondrian", "cqr": "CQR",
-          "di_cqr": "DI-CQR", "localized": "Localized (Guan)", "geo_localized": "Geo-localized",
-          "weighted_oracle": "Weighted (oracle)",
-          "weighted_estimated": "Weighted (est.)", "width_matched_global": "Width-matched global"}
+          "di_cqr": "DI-CQR", "localized": "Kernel-localized", "localized_cqr": "Kernel-localized CQR",
+          "geo_localized": "Geo-localized", "weighted_oracle": "Weighted (oracle-proxy)",
+          "weighted_estimated": "Weighted (est.)", "width_matched_global": "Width-matched global",
+          "di_cqr_auto": r"DI-CQR (auto-$K$)", "di_normalized_auto": r"DI-normalized (auto-$\kappa$)"}
 ORDER = ["split", "region_mondrian", "normalized", "di_normalized", "cqr", "di_mondrian",
-         "di_cqr", "localized", "geo_localized", "weighted_oracle", "weighted_estimated",
-         "width_matched_global"]
+         "di_cqr", "localized", "localized_cqr", "geo_localized", "weighted_oracle",
+         "weighted_estimated", "width_matched_global"]
 
 
 def ms(rg, m, col):
@@ -80,7 +81,7 @@ def paired_table():
 
 def ablation_table():
     lines = [r"\begin{tabular}{c c ccc ccc}", r"\toprule",
-             r"$K$ & min pts/bin & \multicolumn{3}{c}{moderate} & \multicolumn{3}{c}{severe} \\",
+             r"$K$ & min.\ obs.\ cal.\ points/bin & \multicolumn{3}{c}{moderate} & \multicolumn{3}{c}{severe} \\",
              r"\cmidrule(lr){3-5}\cmidrule(lr){6-8}",
              r" & & marg & worst & IntScore & marg & worst & IntScore \\", r"\midrule"]
     for K in [3, 4, 5, 6, 8, 10]:
@@ -96,7 +97,7 @@ def ablation_table():
 
 def meuse_table():
     mm = ["split", "region_mondrian", "normalized", "di_normalized", "cqr", "di_mondrian",
-          "di_cqr", "localized", "geo_localized", "weighted_estimated"]
+          "di_cqr", "localized", "localized_cqr", "geo_localized", "weighted_estimated"]
     def mc(m, met):
         r = M[(M.method == m) & (M.metric == met)].iloc[0]
         return f"{r['mean']:.2f}\\,$\\pm$\\,{r['sd']:.2f}"
@@ -155,6 +156,80 @@ def clip_table():
     open(os.path.join(PAP, "table_clip.tex"), "w").write("\n".join(lines))
 
 
+def region_table():
+    R = pd.read_csv(os.path.join(RES, "sim_region_sens.csv"))
+    def v(rg, m, k):
+        r = R[(R.regime == rg) & (R.method == m) & (R.k == k)]
+        return f"{float(r['mean'].iloc[0]):.2f}" if len(r) else "--"
+    pretty = {"split": "Split", "di_normalized": "DI-normalized", "di_cqr": "DI-CQR"}
+    lines = [r"\begin{tabular}{l ccc ccc}", r"\toprule",
+             r" & \multicolumn{3}{c}{moderate} & \multicolumn{3}{c}{severe} \\",
+             r"\cmidrule(lr){2-4}\cmidrule(lr){5-7}",
+             r"Method & $2\times2$ & $3\times3$ & $4\times4$ & $2\times2$ & $3\times3$ & $4\times4$ \\", r"\midrule"]
+    for m in ["split", "di_normalized", "di_cqr"]:
+        lines.append(f"{pretty[m]} & {v('moderate',m,2)} & {v('moderate',m,3)} & {v('moderate',m,4)} & "
+                     f"{v('severe',m,2)} & {v('severe',m,3)} & {v('severe',m,4)} \\\\")
+    lines += [r"\bottomrule", r"\end{tabular}"]
+    open(os.path.join(PAP, "table_region.tex"), "w").write("\n".join(lines))
+
+
+def kappa_table():
+    K = pd.read_csv(os.path.join(RES, "sim_kappa_sens.csv"))
+    def v(rg, kap, col):
+        r = K[(K.regime == rg) & (np.isclose(K.kappa, kap))]
+        return f"{float(r[col].iloc[0]):.2f}" if len(r) else "--"
+    lines = [r"\begin{tabular}{c cc cc cc}", r"\toprule",
+             r" & \multicolumn{2}{c}{no bias} & \multicolumn{2}{c}{moderate} & \multicolumn{2}{c}{severe} \\",
+             r"\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}",
+             r"$\kappa$ & worst & IntScore & worst & IntScore & worst & IntScore \\", r"\midrule"]
+    for kap in [0.1, 0.25, 0.5, 1.0]:
+        star = r"$^\star$" if kap == 0.25 else ""
+        lines.append(f"{kap}{star} & {v('none',kap,'worst')} & {v('none',kap,'interval_score')} & "
+                     f"{v('moderate',kap,'worst')} & {v('moderate',kap,'interval_score')} & "
+                     f"{v('severe',kap,'worst')} & {v('severe',kap,'interval_score')} \\\\")
+    lines += [r"\bottomrule", r"\end{tabular}"]
+    open(os.path.join(PAP, "table_kappa.tex"), "w").write("\n".join(lines))
+
+
+def mechanism_table():
+    Mm = pd.read_csv(os.path.join(RES, "sim_mechanism.csv"))
+    Mp = pd.read_csv(os.path.join(RES, "sim_mechanism_partial.csv"))
+    glab = {"gain_IS_vs_cqr": "IntScore gain vs.\\ CQR",
+            "gain_IS_vs_split": "IntScore gain vs.\\ split",
+            "gain_worst_vs_split": "Worst-region gain vs.\\ split"}
+    def pooled(gain):
+        r = Mm[(Mm.group == "pooled_biased") & (Mm.gain == gain)]
+        return f"{float(r['pearson_r'].iloc[0]):.2f} ({float(r['p_value'].iloc[0]):.1g})" if len(r) else "--"
+    def partial(gain):
+        r = Mp[Mp.gain == gain]
+        if not len(r):
+            return "--"
+        r = r.iloc[0]
+        return (f"{r['partial_r']:.2f} [{r['ci_lo']:.2f}, {r['ci_hi']:.2f}] ({r['boot_p']:.2g})")
+    lines = [r"\begin{tabular}{l cc}", r"\toprule",
+             r"Per-seed gain of DI-CQR & pooled $r$ ($p$) & regime-controlled partial $r$ [95\% CI] ($p$) \\",
+             r"\midrule"]
+    for g in ["gain_IS_vs_cqr", "gain_IS_vs_split", "gain_worst_vs_split"]:
+        lines.append(f"{glab[g]} & {pooled(g)} & {partial(g)} \\\\")
+    lines += [r"\bottomrule", r"\end{tabular}"]
+    open(os.path.join(PAP, "table_mechanism.tex"), "w").write("\n".join(lines))
+
+
+def auto_table():
+    rows_m = ["di_cqr", "di_cqr_auto", "di_normalized", "di_normalized_auto"]
+    lines = [r"\begin{tabular}{l cc cc}", r"\toprule",
+             r" & \multicolumn{2}{c}{moderate} & \multicolumn{2}{c}{severe} \\",
+             r"\cmidrule(lr){2-3}\cmidrule(lr){4-5}",
+             r"Method & worst & IntScore & worst & IntScore \\", r"\midrule"]
+    for m in rows_m:
+        lines.append(f"{PRETTY[m]} & {cell('moderate',m,'worst_region_coverage')} & "
+                     f"{cell('moderate',m,'mean_interval_score',1)} & "
+                     f"{cell('severe',m,'worst_region_coverage')} & "
+                     f"{cell('severe',m,'mean_interval_score',1)} \\\\")
+    lines += [r"\bottomrule", r"\end{tabular}"]
+    open(os.path.join(PAP, "table_auto.tex"), "w").write("\n".join(lines))
+
+
 def headline():
     h = {}
     for rg in ["none", "mild", "moderate", "severe"]:
@@ -166,5 +241,6 @@ def headline():
 
 if __name__ == "__main__":
     main_table(); controls_table(); width_table(); paired_table(); ablation_table()
-    meuse_table(); bridge_table(); lucas_table(); clip_table(); headline()
+    meuse_table(); bridge_table(); lucas_table(); clip_table()
+    region_table(); kappa_table(); mechanism_table(); auto_table(); headline()
     print("wrote LaTeX tables + headline_numbers.json")

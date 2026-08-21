@@ -209,3 +209,109 @@ def width_matched_global(mu_q, target_mean_width):
     """Constant-width interval around mu whose mean width equals target."""
     half = np.full_like(mu_q, target_mean_width / 2.0)
     return mu_q - half, mu_q + half, half
+
+
+def localized_cqr(qlo_cal, qhi_cal, y_cal, feat_cal, qlo_q, qhi_q, feat_q, alpha,
+                  mults=(0.5, 1.0, 2.0), batch=512):
+    """Kernel-localized CQR: the offset applied to a query's quantile-regression
+    interval is a Gaussian-kernel-weighted quantile (in feature space) of the CQR
+    non-conformity scores E_i = max(q_lo(x_i)-y_i, y_i-q_hi(x_i)). This is the
+    apples-to-apples localized counterpart of DI-CQR (same kernel and
+    calibration-only bandwidth tuning as the kernel-localized residual comparator,
+    but on CQR scores and applied to the quantile interval), isolating whether
+    DI-CQR's edge is the DI grouping rather than merely the CQR score.
+    Bandwidth is chosen on the calibration set only by leave-one-out interval score;
+    no test labels are used."""
+    from scipy.spatial.distance import cdist
+    E = np.maximum(qlo_cal - y_cal, y_cal - qhi_cal)
+    fc = np.asarray(feat_cal, float)
+    dcc = cdist(fc, fc)
+    base_bw = np.median(dcc[dcc > 0]) + 1e-12
+    n = len(E)
+    level = min(1.0, (1 - alpha) * (1 + 1.0 / n))
+    order = np.argsort(E)
+    E_sorted = E[order]
+    # tune bandwidth on calibration LOO CQR interval score
+    best_bw, best_score = base_bw, np.inf
+    for mlt in mults:
+        bw = base_bw * mlt
+        W = np.exp(-(dcc ** 2) / (2 * bw ** 2))
+        np.fill_diagonal(W, 0.0)
+        Wc = W[:, order]
+        frac = np.cumsum(Wc, axis=1) / (Wc.sum(1, keepdims=True) + 1e-12)
+        idx = np.clip((frac >= level).argmax(axis=1), 0, n - 1)
+        Qcal = E_sorted[idx]
+        sc = np.mean(_interval_score(y_cal, qlo_cal - Qcal, qhi_cal + Qcal, alpha))
+        if sc < best_score:
+            best_score, best_bw = sc, bw
+    # apply at queries with best bandwidth
+    fc_ord = fc[order]
+    fq = np.asarray(feat_q, float)
+    Q = np.empty(len(fq))
+    for i in range(0, len(fq), batch):
+        D = cdist(fq[i:i+batch], fc_ord)
+        Wq = np.exp(-(D ** 2) / (2 * best_bw ** 2)) + 1e-12
+        frac = np.cumsum(Wq, axis=1) / Wq.sum(1, keepdims=True)
+        idx = np.clip((frac >= level).argmax(axis=1), 0, n - 1)
+        Q[i:i+batch] = E_sorted[idx]
+    lo, hi = qlo_q - Q, qhi_q + Q
+    return lo, hi, (hi - lo) / 2.0
+
+
+# ---------------------------------------------------------------- hyperparameter
+# selection (calibration-valid: chosen by cross-conformal interval score on the
+# CALIBRATION set only; no test labels, no fitting labels beyond the already-fit
+# models). This makes DI-CQR / DI-normalized deployable without a fixed a-priori K
+# or kappa and without test-set tuning.
+def _xval_folds(n, n_folds, seed):
+    perm = np.random.default_rng(seed).permutation(n)
+    return [perm[i::n_folds] for i in range(n_folds)]
+
+
+def select_K_di_cqr(qlo_cal, qhi_cal, y_cal, di_cal, alpha,
+                    K_grid=(3, 4, 5, 6, 8, 10), n_folds=5, min_n=15, seed=0):
+    """Pick K minimizing the cross-conformal interval score on the calibration set.
+    Each fold is scored by a DI-CQR model calibrated on the other folds only."""
+    n = len(y_cal)
+    if n < 2 * n_folds:
+        return 5
+    folds = _xval_folds(n, n_folds, seed)
+    best_K, best = K_grid[0], np.inf
+    for K in K_grid:
+        sc = []
+        for te in folds:
+            tr = np.setdiff1d(np.arange(n), te)
+            if len(tr) < min_n:
+                continue
+            lo, hi, _ = di_cqr(qlo_cal[tr], qhi_cal[tr], y_cal[tr], di_cal[tr],
+                               qlo_cal[te], qhi_cal[te], di_cal[te], alpha,
+                               K=K, min_n=min_n)
+            sc.append(_interval_score(y_cal[te], lo, hi, alpha))
+        if not sc:
+            continue
+        m = float(np.mean(np.concatenate(sc)))
+        if m < best:
+            best, best_K = m, K
+    return best_K
+
+
+def select_kappa_di_normalized(mu_cal, y_cal, di_cal, alpha,
+                               kappa_grid=(0.1, 0.25, 0.5, 1.0), n_folds=5, seed=0):
+    """Pick the DI-normalized floor kappa minimizing the cross-conformal interval
+    score on the calibration set (calibration-valid, no test labels)."""
+    n = len(y_cal)
+    if n < 2 * n_folds:
+        return 0.25
+    folds = _xval_folds(n, n_folds, seed)
+    best_k, best = kappa_grid[0], np.inf
+    for kap in kappa_grid:
+        sc = []
+        for te in folds:
+            tr = np.setdiff1d(np.arange(n), te)
+            lo, hi, _ = di_normalized(mu_cal[tr], y_cal[tr], di_cal[tr],
+                                      mu_cal[te], di_cal[te], alpha, floor=kap)
+            sc.append(_interval_score(y_cal[te], lo, hi, alpha))
+        m = float(np.mean(np.concatenate(sc)))
+        if m < best:
+            best, best_k = m, kap
+    return best_k

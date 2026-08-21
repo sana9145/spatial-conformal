@@ -124,6 +124,88 @@ def main():
                           pearson_DI_logInvPsel_mean=float(np.mean(pe))))
     pd.DataFrame(brows).to_csv(os.path.join(RES, "sim_bridge.csv"), index=False)
 
+    # ---- region-definition sensitivity: worst-region coverage under 2x2/3x3/4x4
+    rs_rows = []
+    for r in runs:
+        for m, dk in (r.get("region_sens") or {}).items():
+            for k, worst in dk.items():
+                rs_rows.append(dict(regime=r["regime"], seed=r["seed"], method=m,
+                                    k=int(k), worst=float(worst)))
+    if rs_rows:
+        rsdf = pd.DataFrame(rs_rows)
+        (rsdf.groupby(["regime", "method", "k"])["worst"].agg(["mean", "std"])
+         .reset_index().to_csv(os.path.join(RES, "sim_region_sens.csv"), index=False))
+
+    # ---- kappa sensitivity for DI-normalized
+    ks_rows = []
+    for r in runs:
+        for kap, d in (r.get("kappa_sens") or {}).items():
+            ks_rows.append(dict(regime=r["regime"], seed=r["seed"], kappa=float(kap), **d))
+    if ks_rows:
+        ksdf = pd.DataFrame(ks_rows)
+        (ksdf.groupby(["regime", "kappa"]).agg(
+            worst=("worst_region_coverage", "mean"),
+            interval_score=("mean_interval_score", "mean"),
+            width=("mean_width", "mean")).reset_index()
+         .to_csv(os.path.join(RES, "sim_kappa_sens.csv"), index=False))
+
+    # ---- mechanism: does the per-seed DI-1/p_sel Spearman predict the per-seed
+    # DI-CQR gain? (turns the bridge correlation into predictive evidence)
+    from scipy.stats import pearsonr
+    recs = []
+    for r in runs:
+        sp = r.get("di_selweight_spearman")
+        if sp is None:
+            continue
+        M = r["methods"]
+        recs.append(dict(regime=r["regime"], seed=r["seed"], spear=float(sp),
+                         gain_IS_vs_cqr=M["cqr"]["mean_interval_score"] - M["di_cqr"]["mean_interval_score"],
+                         gain_IS_vs_split=M["split"]["mean_interval_score"] - M["di_cqr"]["mean_interval_score"],
+                         gain_worst_vs_split=M["di_cqr"]["worst_region_coverage"] - M["split"]["worst_region_coverage"]))
+    mdf = pd.DataFrame(recs)
+    groups = [(rg, mdf[mdf.regime == rg]) for rg in ["mild", "moderate", "severe"]]
+    groups.append(("pooled_biased", mdf))
+    mech = []
+    for grp, sub in groups:
+        for gcol in ["gain_IS_vs_cqr", "gain_IS_vs_split", "gain_worst_vs_split"]:
+            if len(sub) >= 3 and sub["spear"].nunique() > 2 and sub[gcol].nunique() > 2:
+                pr, pp = pearsonr(sub["spear"].to_numpy(), sub[gcol].to_numpy())
+                mech.append(dict(group=grp, gain=gcol, n=len(sub),
+                                 pearson_r=float(pr), p_value=float(pp)))
+    pd.DataFrame(mech).to_csv(os.path.join(RES, "sim_mechanism.csv"), index=False)
+
+    # partial correlation controlling for regime (within-regime centering) with a
+    # seed-clustered bootstrap CI, since (a) the pooled r conflates between-regime
+    # variation and (b) seeds are shared across regimes so runs are not independent.
+    biased = mdf[mdf.regime.isin(["mild", "moderate", "severe"])].copy()
+
+    def _partial_r(d, gcol):
+        sc = d["spear"] - d.groupby("regime")["spear"].transform("mean")
+        gc = d[gcol] - d.groupby("regime")[gcol].transform("mean")
+        if sc.std(ddof=0) == 0 or gc.std(ddof=0) == 0:
+            return np.nan
+        return float(np.corrcoef(sc, gc)[0, 1])
+
+    rng = np.random.default_rng(0)
+    seeds = sorted(biased.seed.unique())
+    by_seed = {s: biased[biased.seed == s] for s in seeds}
+    mechp = []
+    for gcol in ["gain_IS_vs_cqr", "gain_IS_vs_split", "gain_worst_vs_split"]:
+        r = _partial_r(biased, gcol)
+        boots = []
+        for _ in range(1000):
+            samp = rng.choice(seeds, size=len(seeds), replace=True)
+            dd = pd.concat([by_seed[s] for s in samp], ignore_index=True)
+            rb = _partial_r(dd, gcol)
+            if not np.isnan(rb):
+                boots.append(rb)
+        boots = np.array(boots)
+        lo, hi = np.percentile(boots, [2.5, 97.5])
+        p = 2 * min((boots <= 0).mean(), (boots >= 0).mean())
+        mechp.append(dict(gain=gcol, partial_r=r, ci_lo=float(lo), ci_hi=float(hi),
+                          boot_p=float(p), n_seeds=len(seeds)))
+    pd.DataFrame(mechp).to_csv(os.path.join(RES, "sim_mechanism_partial.csv"), index=False)
+
     # ---- DI-CQR clipping diagnostics (queries above max calibration DI -> top bin)
     crows = []
     for r in runs:
@@ -151,6 +233,38 @@ def main():
                                  mean_width=float(sub["mean_width"].dropna().mean()),
                                  mean_interval_score=float(sub["mean_interval_score"].dropna().mean())))
         pd.DataFrame(csum).to_csv(os.path.join(RES, "sim_clip_summary.csv"), index=False)
+
+    # ---- calibration-valid selected K and kappa (distribution by regime)
+    sel_rows = []
+    for r in runs:
+        s = r.get("selected")
+        if s:
+            sel_rows.append(dict(regime=r["regime"], seed=r["seed"],
+                                 K=s["K"], kappa=s["kappa"]))
+    if sel_rows:
+        sd = pd.DataFrame(sel_rows)
+        srows = []
+        for rg in REGIME_ORDER:
+            sub = sd[sd.regime == rg]
+            srows.append(dict(regime=rg, K_mean=float(sub.K.mean()), K_sd=float(sub.K.std(ddof=1)),
+                              K_mode=int(sub.K.mode().iloc[0]),
+                              kappa_mean=float(sub.kappa.mean()), kappa_sd=float(sub.kappa.std(ddof=1)),
+                              kappa_mode=float(sub.kappa.mode().iloc[0])))
+        pd.DataFrame(srows).to_csv(os.path.join(RES, "sim_selection.csv"), index=False)
+
+    # ---- weighted-conformal capped-interval fraction by regime
+    wrows = []
+    for r in runs:
+        wc = r.get("weighted_capped")
+        if not wc:
+            continue
+        for m, frac in wc.items():
+            wrows.append(dict(regime=r["regime"], seed=r["seed"], method=m, frac_capped=frac))
+    if wrows:
+        wdf = pd.DataFrame(wrows)
+        wsum = (wdf.groupby(["regime", "method"])["frac_capped"]
+                .agg(["mean", "std"]).reset_index())
+        wsum.to_csv(os.path.join(RES, "sim_weighted_capped.csv"), index=False)
 
     # ---- representative fields for maps (severe seed 0)
     import run_sim as R

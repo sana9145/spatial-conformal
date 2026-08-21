@@ -17,9 +17,9 @@
     "normalized": {
       "true_marginal": 0.907,
       "worst_region_coverage": 0.825,
-      "coverage_gap": 0.144,
-      "mean_width": 2.414,
-      "mean_interval_score": 3.058
+      "coverage_gap": 0.145,
+      "mean_width": 2.415,
+      "mean_interval_score": 3.057
     },
     "di_normalized": {
       "true_marginal": 0.911,
@@ -56,6 +56,13 @@
       "mean_width": 2.427,
       "mean_interval_score": 3.135
     },
+    "localized_cqr": {
+      "true_marginal": 0.898,
+      "worst_region_coverage": 0.815,
+      "coverage_gap": 0.143,
+      "mean_width": 2.509,
+      "mean_interval_score": 3.153
+    },
     "geo_localized": {
       "true_marginal": 0.903,
       "worst_region_coverage": 0.815,
@@ -78,11 +85,11 @@
       "mean_interval_score": 3.266
     },
     "width_matched_global": {
-      "true_marginal": 0.938,
-      "worst_region_coverage": 0.852,
-      "coverage_gap": 0.14,
-      "mean_width": 2.858,
-      "mean_interval_score": 3.376
+      "true_marginal": 0.942,
+      "worst_region_coverage": 0.858,
+      "coverage_gap": 0.135,
+      "mean_width": 2.913,
+      "mean_interval_score": 3.399
     }
   },
   "mild": {
@@ -103,9 +110,9 @@
     "normalized": {
       "true_marginal": 0.872,
       "worst_region_coverage": 0.718,
-      "coverage_gap": 0.247,
-      "mean_width": 2.987,
-      "mean_interval_score": 4.44
+      "coverage_gap": 0.246,
+      "mean_width": 2.988,
+      "mean_interval_score": 4.441
     },
     "di_normalized": {
       "true_marginal": 0.845,
@@ -142,6 +149,13 @@
       "mean_width": 2.371,
       "mean_interval_score": 4.804
     },
+    "localized_cqr": {
+      "true_marginal": 0.866,
+      "worst_region_coverage": 0.707,
+      "coverage_gap": 0.253,
+      "mean_width": 2.99,
+      "mean_interval_score": 4.471
+    },
     "geo_localized": {
       "true_marginal": 0.784,
       "worst_region_coverage": 0.585,
@@ -164,11 +178,11 @@
       "mean_interval_score": 6.264
     },
     "width_matched_global": {
-      "true_marginal": 0.901,
-      "worst_region_coverage": 0.723,
-      "coverage_gap": 0.273,
-      "mean_width": 3.387,
-      "mean_interval_score": 4.872
+      "true_marginal": 0.914,
+      "worst_region_coverage": 0.748,
+      "coverage_gap": 0.25,
+      "mean_width": 3.608,
+      "mean_interval_score": 4.904
     }
   },
   "moderate": {
@@ -188,10 +202,10 @@
     },
     "normalized": {
       "true_marginal": 0.773,
-      "worst_region_coverage": 0.524,
+      "worst_region_coverage": 0.525,
       "coverage_gap": 0.43,
-      "mean_width": 3.619,
-      "mean_interval_score": 7.869
+      "mean_width": 3.622,
+      "mean_interval_score": 7.864
     },
     "di_normalized": {
       "true_marginal": 0.758,
@@ -228,6 +242,13 @@
       "mean_width": 2.397,
       "mean_interval_score": 10.145
     },
+    "localized_cqr": {
+      "true_marginal": 0.766,
+      "worst_region_coverage": 0.501,
+      "coverage_gap": 0.448,
+      "mean_width": 3.543,
+      "mean_interval_score": 7.998
+    },
     "geo_localized": {
       "true_marginal": 0.556,
       "worst_region_coverage": 0.294,
@@ -250,11 +271,11 @@
       "mean_interval_score": 26.337
     },
     "width_matched_global": {
-      "true_marginal": 0.783,
-      "worst_region_coverage": 0.499,
-      "coverage_gap": 0.494,
-      "mean_width": 3.787,
-      "mean_interval_score": 8.315
+      "true_marginal": 0.813,
+      "worst_region_coverage": 0.539,
+      "coverage_gap": 0.458,
+      "mean_width": 4.157,
+      "mean_interval_score": 8.016
     }
   },
   "severe": {
@@ -276,8 +297,8 @@
       "true_marginal": 0.613,
       "worst_region_coverage": 0.323,
       "coverage_gap": 0.575,
-      "mean_width": 3.135,
-      "mean_interval_score": 13.015
+      "mean_width": 3.133,
+      "mean_interval_score": 13.026
     },
     "di_normalized": {
       "true_marginal": 0.691,
@@ -314,6 +335,13 @@
       "mean_width": 2.076,
       "mean_interval_score": 16.962
     },
+    "localized_cqr": {
+      "true_marginal": 0.661,
+      "worst_region_coverage": 0.346,
+      "coverage_gap": 0.579,
+      "mean_width": 3.435,
+      "mean_interval_score": 11.0
+    },
     "geo_localized": {
       "true_marginal": 0.381,
       "worst_region_coverage": 0.143,
@@ -336,11 +364,11 @@
       "mean_interval_score": 36.488
     },
     "width_matched_global": {
-      "true_marginal": 0.666,
-      "worst_region_coverage": 0.372,
-      "coverage_gap": 0.589,
-      "mean_width": 3.584,
-      "mean_interval_score": 12.24
+      "true_marginal": 0.703,
+      "worst_region_coverage": 0.413,
+      "coverage_gap": 0.56,
+      "mean_width": 3.949,
+      "mean_interval_score": 11.576
     }
   }
 }

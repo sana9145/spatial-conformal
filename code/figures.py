@@ -168,7 +168,7 @@ fig, ax = plt.subplots(1, 2, figsize=(11, 4.2))
 sub = np.random.default_rng(0).choice(len(inv), size=2000, replace=False)
 ax[0].scatter(inv[sub], di_f[sub], s=6, alpha=.3, c="#4c78a8", lw=0)
 ax[0].set_xscale("log"); ax[0].set_xlim(np.percentile(inv, 1), np.percentile(inv, 99))
-ax[0].set_xlabel("inverse selection weight  $1/p_{sel}(x)$ (1--99 pct)")
+ax[0].set_xlabel("inverse selection intensity  $1/p_{sel}(x)$ (1--99 pct)")
 ax[0].set_ylabel("Dissimilarity Index");
 ax[0].set_title(f"(a) DI tracks 1/$p_{{sel}}$ (severe run)\nSpearman={B.loc['severe','spearman_DI_invpsel_mean']:.2f}")
 rg = ["mild", "moderate", "severe"]
@@ -178,9 +178,9 @@ err = [[s-l for s, l in zip(sp, lo)], [h-s for s, h in zip(sp, hi)]]
 ax[1].errorbar(range(3), sp, yerr=err, marker="o", capsize=4, c="#e45756")
 ax[1].set_xticks(range(3)); ax[1].set_xticklabels(rg); ax[1].set_ylim(0, 1)
 ax[1].set_xlabel("monitoring-bias regime"); ax[1].set_ylabel("Spearman(DI, 1/$p_{sel}$)")
-ax[1].set_title("(b) Correlation strengthens with bias\n(explains the boundary)")
-fig.suptitle("Why DI-conditioning works: the Dissimilarity Index is a computable proxy for the\n"
-             "covariate-shift weight — and only strongly so once bias is large", y=1.03)
+ax[1].set_title("(b) Correlation strengthens with bias\n(consistent with the boundary)")
+fig.suptitle("DI vs. selection intensity: the Dissimilarity Index correlates with the inverse\n"
+             "selection intensity, increasingly so as bias grows (an association, not a proven mechanism)", y=1.03)
 fig.tight_layout(); fig.savefig(os.path.join(FIG, "fig8_bridge.png"), bbox_inches="tight"); plt.close(fig)
 
 
