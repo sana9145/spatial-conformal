@@ -1,18 +1,24 @@
-"""figures.py -- publication figures from saved result CSV/JSON."""
+"""figures.py -- publication figures from the saved result CSV/JSON files."""
 import json, os, numpy as np, pandas as pd
 import matplotlib; matplotlib.use("Agg")
+import matplotlib.ticker
 import matplotlib.pyplot as plt
 
 RES = os.path.join(os.path.dirname(__file__), "..", "results")
 FIG = os.path.join(os.path.dirname(__file__), "..", "figures")
-plt.rcParams.update({"font.size": 10, "savefig.dpi": 200, "font.family": "DejaVu Sans"})
+plt.rcParams.update({"font.size": 9, "savefig.dpi": 300, "font.family": "DejaVu Sans",
+                     "axes.spines.top": False, "axes.spines.right": False})
 NOM = 0.9
-REG = ["none", "mild", "moderate", "severe"]
+REG = ["none", "mild", "moderate", "severe", "hidden_moderate", "hidden_severe"]
+REGLAB = ["none", "mild", "moderate", "severe", "hidden\nmoderate", "hidden\nsevere"]
 PRETTY = {"split": "Split", "normalized": "Normalized", "di_normalized": "DI-normalized",
           "region_mondrian": "Spatial-Mondrian", "di_mondrian": "DI-Mondrian",
-          "cqr": "CQR", "di_cqr": "DI-CQR", "localized": "Localized (Guan)",
-          "geo_localized": "Geo-localized", "weighted_oracle": "Weighted (oracle)",
-          "weighted_estimated": "Weighted (est.)", "width_matched_global": "Width-matched global"}
+          "cqr": "CQR", "di_cqr": "DI-CQR", "lcp": "LCP", "lcp_cqr": "LCP-CQR",
+          "geo_lcp": "Geo-LCP", "weighted_oracle": "Weighted (oracle)",
+          "weighted_estimated": "Weighted (estimated)", "width_matched_global": "Width-matched",
+          "di_cqr_K2": "DI-CQR (K=2)"}
+COL = {"split": "#4c78a8", "cqr": "#f58518", "di_cqr": "#d62728", "di_normalized": "#ff9896",
+       "weighted_oracle": "#54a24b", "lcp": "#9467bd", "lcp_cqr": "#c5b0d5"}
 S = pd.read_csv(os.path.join(RES, "sim_summary.csv"))
 
 
@@ -21,207 +27,179 @@ def g(rg, m, col):
     return r[col + "_mean"], r[col + "_sd"]
 
 
-# ---- Fig 1: controls + collapse (marginal & worst-region vs regime) ----
-fig, ax = plt.subplots(1, 2, figsize=(11, 4.3))
-lines = ["split", "localized", "di_normalized", "di_cqr", "weighted_oracle"]
-cols = {"split": "#4c78a8", "cqr": "#f58518", "di_cqr": "#e45756", "weighted_oracle": "#54a24b",
-        "localized": "#9467bd", "di_normalized": "#d62728"}
+def save(fig, name):
+    fig.savefig(os.path.join(FIG, name), bbox_inches="tight")
+    plt.close(fig)
+
+
+F = json.load(open(os.path.join(RES, "sim_fields_severe.json")))
+FH = json.load(open(os.path.join(RES, "sim_fields_hidden_severe.json")))
+
+# ---- Fig 1: the spatial problem ------------------------------------------------
+G = F["GRID"]; ext = [0, 1, 0, 1]
+
+
+def grid(a):
+    return np.array(a, float).reshape(G, G)
+
+
+def regions(ax, F_, c="w"):
+    # boundaries of the 3 x 3 region partition used for worst-region coverage
+    for t in (1 / 3, 2 / 3):
+        ax.axhline(t, c=c, lw=0.7, alpha=0.8); ax.axvline(t, c=c, lw=0.7, alpha=0.8)
+
+
+fig, ax = plt.subplots(1, 4, figsize=(15, 3.9))
+for j, (F_, lab) in enumerate([(F, "(a) covariate-driven access"), (FH, "(b) hidden road access")]):
+    co = np.array(F_["coords"]); fi = np.array(F_["fit"]); ca = np.array(F_["cal"])
+    im = ax[j].imshow(np.log10(grid(F_["p_sel"]) + 1e-300).clip(-12, None), origin="lower",
+                      extent=ext, cmap="viridis")
+    regions(ax[j], F_)
+    ax[j].scatter(co[fi, 0], co[fi, 1], s=4, c="#ff7f0e", lw=0, label="fitting")
+    ax[j].scatter(co[ca, 0], co[ca, 1], s=4, c="cyan", lw=0, label="calibration")
+    ax[j].set_title(lab, fontsize=9, loc="left")
+    cb = fig.colorbar(im, ax=ax[j], fraction=.046); cb.set_label(r"$\log_{10} p_{\mathrm{sel}}$")
+ax[0].legend(loc="upper right", fontsize=7, framealpha=0.85, markerscale=2)
+mon = np.zeros(G * G, bool); mon[np.array(F["mon"])] = True
+ax[2].imshow(np.where(mon, 1.0, 0.12).reshape(G, G), origin="lower", extent=ext, cmap="Greys", vmin=0, vmax=1)
+regions(ax[2], F, c="#d62728")
+ax[2].set_title("(c) held-out cells (light), as in (a)", fontsize=9, loc="left")
+im = ax[3].imshow(grid(F["di"]), origin="lower", extent=ext, cmap="magma")
+regions(ax[3], F)
+ax[3].set_title("(d) Dissimilarity Index, as in (a)", fontsize=9, loc="left")
+fig.colorbar(im, ax=ax[3], fraction=.046)
+for a in ax:
+    a.set_xticks([]); a.set_yticks([])
+fig.tight_layout(); save(fig, "fig1_setup.png")
+
+# ---- Fig 2: coverage across regimes -----------------------------------------------
+fig, ax = plt.subplots(1, 2, figsize=(11, 3.8))
+lines = ["split", "cqr", "lcp", "di_normalized", "di_cqr", "weighted_oracle"]
 for j, col in enumerate(["true_marginal", "worst_region_coverage"]):
-    for m in lines:
-        ys = [g(rg, m, col)[0] for rg in REG]
-        es = [g(rg, m, col)[1] for rg in REG]
-        ax[j].errorbar(range(4), ys, yerr=es, marker="o", capsize=3, label=PRETTY[m], color=cols[m])
-    ax[j].axhline(NOM, ls="--", c="k", lw=1); ax[j].set_xticks(range(4)); ax[j].set_xticklabels(REG)
-    ax[j].set_ylim(0, 1.02); ax[j].set_xlabel("monitoring-bias regime")
-ax[0].set_ylabel("marginal coverage"); ax[0].set_title("(a) Marginal coverage")
-ax[1].set_ylabel("worst-region coverage"); ax[1].set_title("(b) Worst-region coverage")
-ax[0].legend(fontsize=8, loc="lower left")
-ax[0].text(0.05, NOM+.01, "nominal 0.90", fontsize=8)
-fig.suptitle("Split conformal is near-nominal only when calibration and test match (no bias);\n"
-             "it degrades as monitoring bias grows. Weighted-oracle recovers coverage; DI-CQR partially recovers it.", y=1.03)
-fig.tight_layout(); fig.savefig(os.path.join(FIG, "fig1_controls.png"), bbox_inches="tight"); plt.close(fig)
+    for k, m in enumerate(lines):
+        x = np.arange(len(REG)) + (k - 2.5) * 0.06
+        ys = [g(rg, m, col)[0] for rg in REG]; es = [g(rg, m, col)[1] for rg in REG]
+        ax[j].errorbar(x, ys, yerr=es, marker="o", ms=3.5, capsize=2, lw=1.2, label=PRETTY[m], color=COL[m])
+    ax[j].axhline(NOM, ls="--", c="k", lw=0.8)
+    ax[j].axvline(3.5, c="0.6", lw=0.6)
+    ax[j].set_xticks(range(len(REG))); ax[j].set_xticklabels(REGLAB)
+    ax[j].set_ylim(0, 1.02)
+ax[0].set_ylabel("marginal coverage"); ax[1].set_ylabel("worst-region coverage")
+ax[0].set_title("(a)", loc="left"); ax[1].set_title("(b)", loc="left")
+ax[1].legend(fontsize=7, loc="lower left", ncol=2)
+fig.tight_layout(); save(fig, "fig2_coverage_regimes.png")
 
-
-# ---- Fig 2: method comparison bars (interval score + worst-region) moderate & severe ----
-order = ["split", "region_mondrian", "normalized", "di_normalized", "cqr",
-         "di_mondrian", "di_cqr", "localized", "geo_localized",
-         "weighted_estimated", "weighted_oracle", "width_matched_global"]
-fig, ax = plt.subplots(2, 2, figsize=(13, 8))
-for col_i, rg in enumerate(["moderate", "severe"]):
-    for row_i, col in enumerate(["mean_interval_score", "worst_region_coverage"]):
-        a = ax[row_i, col_i]
+# ---- Fig 3: method comparison, severe covariate and hidden regimes -----------------
+order = ["split", "region_mondrian", "normalized", "cqr", "di_normalized", "di_mondrian",
+         "di_cqr", "lcp", "lcp_cqr", "geo_lcp", "weighted_estimated", "weighted_oracle",
+         "width_matched_global"]
+fig, ax = plt.subplots(2, 2, figsize=(12, 6.8))
+for ci, (rg, lab) in enumerate([("severe", "severe, covariate access"), ("hidden_severe", "severe, hidden access")]):
+    for ri, col in enumerate(["mean_interval_score", "worst_region_coverage"]):
+        a = ax[ri, ci]
         vals = [g(rg, m, col)[0] for m in order]; es = [g(rg, m, col)[1] for m in order]
-        colors = ["#e45756" if m in ("di_cqr", "di_normalized")
-                  else ("#9467bd" if "localized" in m else ("#54a24b" if "weighted" in m else "#4c78a8"))
-                  for m in order]
-        a.bar(range(len(order)), vals, yerr=es, capsize=2, color=colors, edgecolor="k", lw=.4)
-        a.set_xticks(range(len(order))); a.set_xticklabels([PRETTY[m] for m in order], rotation=40, ha="right", fontsize=8)
+        colors = ["#d62728" if m in ("di_cqr", "di_normalized") else
+                  ("#9467bd" if "lcp" in m else ("#54a24b" if "weighted" in m else "#9ab0c8")) for m in order]
+        a.bar(range(len(order)), vals, yerr=es, capsize=1.5, color=colors, edgecolor="k", lw=.3,
+              error_kw=dict(lw=0.6))
+        a.set_xticks(range(len(order)))
+        a.set_xticklabels([PRETTY[m] for m in order], rotation=45, ha="right", fontsize=7.5)
         if col == "worst_region_coverage":
-            a.axhline(NOM, ls="--", c="k", lw=1); a.set_ylim(0, 1)
-            a.set_ylabel("worst-region coverage")
+            a.axhline(NOM, ls="--", c="k", lw=0.8); a.set_ylim(0, 1); a.set_ylabel("worst-region coverage")
         else:
-            a.set_ylabel("interval score (lower=better)")
-        a.set_title(f"{rg} bias — {'interval score' if row_i==0 else 'worst-region coverage'}")
-fig.suptitle("Weighted-oracle attains the best coverage but the worst interval score (very wide);\n"
-             "DI-CQR gives the best interval score among practical methods and improves worst-region coverage", y=1.01)
-fig.tight_layout(); fig.savefig(os.path.join(FIG, "fig2_methods.png"), bbox_inches="tight"); plt.close(fig)
+            a.set_ylabel("interval score (log scale; lower is better)"); a.set_yscale("log")
+            a.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda x, _: f"{x:g}"))
+            a.yaxis.set_minor_formatter(matplotlib.ticker.FuncFormatter(
+                lambda x, _: f"{x:g}" if f"{x:g}"[0] in "25" else ""))
+        a.set_title(f"({'abcd'[2 * ri + ci]}) {lab}", loc="left", fontsize=9)
+fig.tight_layout(); save(fig, "fig3_methods.png")
+
+# ---- Fig 4: coverage and width against DI (one severe run) ----------------------------
+ev = np.array(F["ev"])
+di = np.array(F["di"])[ev]; ins = np.array(F["in_split"])[ev]; inp = np.array(F["in_dicqr"])[ev]
+hs = np.array(F["half_split"])[ev]; hp = np.array(F["half_dicqr"])[ev]
+edges = np.quantile(di, np.linspace(0, 1, 11)); mid = .5 * (edges[:-1] + edges[1:])
 
 
-# ---- Fig 3: coverage-vs-width efficiency frontier (severe) ----
+def binstat(v):
+    b = np.clip(np.digitize(di, edges) - 1, 0, 9)
+    return [v[b == i].mean() for i in range(10)]
+
+
+fig, ax = plt.subplots(1, 2, figsize=(10, 3.6))
+ax[0].plot(mid, binstat(ins), "o-", c=COL["split"], label="Split", ms=4)
+ax[0].plot(mid, binstat(inp), "s-", c=COL["di_cqr"], label="DI-CQR", ms=4)
+ax[0].axhline(NOM, ls="--", c="k", lw=0.8); ax[0].set_ylim(0, 1)
+ax[0].set_xlabel("Dissimilarity Index (decile midpoints)"); ax[0].set_ylabel("coverage")
+ax[0].legend(fontsize=8); ax[0].set_title("(a)", loc="left")
+ax[1].plot(mid, [2 * x for x in binstat(hs)], "o-", c=COL["split"], label="Split", ms=4)
+ax[1].plot(mid, [2 * x for x in binstat(hp)], "s-", c=COL["di_cqr"], label="DI-CQR", ms=4)
+ax[1].set_xlabel("Dissimilarity Index (decile midpoints)"); ax[1].set_ylabel("mean interval width")
+ax[1].set_title("(b)", loc="left")
+fig.tight_layout(); save(fig, "fig4_coverage_vs_di.png")
+
+# ---- Fig A1: coverage-width frontier ---------------------------------------------------
 sw = pd.read_csv(os.path.join(RES, "sim_sweep_summary.csv"))
-fig, ax = plt.subplots(1, 2, figsize=(11, 4.3))
+fig, ax = plt.subplots(1, 2, figsize=(10, 3.6))
 for j, rg in enumerate(["moderate", "severe"]):
     for m in ["split", "cqr", "di_cqr", "weighted_oracle"]:
         d = sw[(sw.regime == rg) & (sw.method == m)].sort_values("mean_width")
-        ax[j].plot(d["mean_width"], d["marginal"], marker="o", label=PRETTY[m], color=cols[m])
-    ax[j].axhline(NOM, ls="--", c="k", lw=1); ax[j].set_xlabel("mean interval width")
-    ax[j].set_ylabel("marginal coverage"); ax[j].set_title(f"({'a' if j==0 else 'b'}) {rg} bias")
+        ax[j].plot(d["mean_width"], d["marginal"], marker="o", ms=3.5, label=PRETTY[m], color=COL[m])
+    ax[j].axhline(NOM, ls="--", c="k", lw=0.8); ax[j].set_xlabel("mean interval width (log scale)")
+    ax[j].set_ylabel("marginal coverage"); ax[j].set_title(f"({'ab'[j]}) {rg}", loc="left")
     ax[j].set_xscale("log")
-ax[0].legend(fontsize=8, loc="lower right")
-fig.suptitle("Coverage–width frontier: DI-CQR reaches a given coverage at far smaller width than weighted-oracle,\n"
-             "and dominates split/CQR (up-and-left is better)", y=1.03)
-fig.tight_layout(); fig.savefig(os.path.join(FIG, "fig3_frontier.png"), bbox_inches="tight"); plt.close(fig)
+ax[0].legend(fontsize=7, loc="lower right")
+fig.tight_layout(); save(fig, "figA1_frontier.png")
 
-
-# ---- Fig 4: conditional coverage & width vs DI (severe fields) ----
-F = json.load(open(os.path.join(RES, "sim_fields_severe.json")))
-di = np.array(F["di"]); ins = np.array(F["in_split"]); inp = np.array(F["in_dicqr"])
-hs = np.array(F["half_split"]); hp = np.array(F["half_dicqr"])
-edges = np.quantile(di, np.linspace(0, 1, 11)); mid = .5*(edges[:-1]+edges[1:])
-def binstat(v): return [v[(di>=edges[i])&(di<edges[i+1])].mean() for i in range(10)]
-fig, ax = plt.subplots(1, 2, figsize=(11, 4.2))
-ax[0].plot(mid, binstat(ins), "o-", c=cols["split"], label="Split")
-ax[0].plot(mid, binstat(inp), "s-", c=cols["di_cqr"], label="DI-CQR")
-ax[0].axhline(NOM, ls="--", c="k", lw=1); ax[0].set_xlabel("Dissimilarity Index (extrapolation →)")
-ax[0].set_ylabel("coverage"); ax[0].set_ylim(0, 1); ax[0].legend(fontsize=8)
-ax[0].set_title("(a) Coverage vs dissimilarity (severe, one run)")
-ax[1].plot(mid, [2*x for x in binstat(hs)], "o-", c=cols["split"], label="Split")
-ax[1].plot(mid, [2*x for x in binstat(hp)], "s-", c=cols["di_cqr"], label="DI-CQR")
-ax[1].set_xlabel("Dissimilarity Index (extrapolation →)"); ax[1].set_ylabel("interval width"); ax[1].legend(fontsize=8)
-ax[1].set_title("(b) DI-CQR widens intervals with dissimilarity")
-fig.tight_layout(); fig.savefig(os.path.join(FIG, "fig4_vs_di.png"), bbox_inches="tight"); plt.close(fig)
-
-
-# ---- Fig 5: DI-bin ablation ----
+# ---- Fig A2: DI-bin ablation -----------------------------------------------------------
 A = pd.read_csv(os.path.join(RES, "sim_ablation_summary.csv"))
-fig, ax = plt.subplots(1, 2, figsize=(11, 4.2))
+fig, ax = plt.subplots(1, 2, figsize=(10, 3.6))
 for j, col in enumerate(["mean_interval_score_mean", "worst_region_coverage_mean"]):
-    for rg, c in [("moderate", "#f58518"), ("severe", "#e45756")]:
+    for rg, c in [("moderate", "#f58518"), ("severe", "#d62728")]:
         for mono, ls in [(1, "-"), (0, "--")]:
             d = A[(A.regime == rg) & (A.monotone == mono)].sort_values("K")
-            ax[j].plot(d["K"], d[col], ls, marker="o", color=c,
-                       label=f"{rg}, mono={'on' if mono else 'off'}")
-    ax[j].set_xlabel("number of DI bins K")
-    if "worst" in col:
-        ax[j].axhline(NOM, ls=":", c="k"); ax[j].set_ylabel("worst-region coverage")
-        ax[j].set_title("(b) Worst-region coverage vs K")
-    else:
-        ax[j].set_ylabel("interval score"); ax[j].set_title("(a) Interval score vs K")
+            ax[j].plot(d["K"], d[col], ls, marker="o", ms=3.5, color=c,
+                       label=f"{rg}, monotone {'on' if mono else 'off'}")
+    ax[j].set_xlabel("number of DI bins $K$"); ax[j].set_title(f"({'ab'[j]})", loc="left")
+ax[0].set_ylabel("interval score"); ax[1].set_ylabel("worst-region coverage")
 ax[0].legend(fontsize=7)
-fig.suptitle("DI-bin ablation: larger K improves coverage/interval score (fewer points per bin); "
-             "monotonicity has a small positive effect. K=5 fixed a priori for main results.", y=1.03)
-fig.tight_layout(); fig.savefig(os.path.join(FIG, "fig5_ablation.png"), bbox_inches="tight"); plt.close(fig)
+fig.tight_layout(); save(fig, "figA2_ablation.png")
 
-
-# ---- Fig 6: Meuse real-data ----
-M = pd.read_csv(os.path.join(RES, "meuse_summary.csv"))
-mm = ["split", "region_mondrian", "normalized", "di_normalized", "cqr", "di_mondrian", "di_cqr", "weighted_estimated"]
-fig, ax = plt.subplots(1, 2, figsize=(12, 4.3))
-for j, met in enumerate(["worst_region", "mean_interval_score"]):
-    vals = [M[(M.method == m) & (M.metric == met)]["mean"].iloc[0] for m in mm]
-    lo = [M[(M.method == m) & (M.metric == met)]["ci_lo"].iloc[0] for m in mm]
-    hi = [M[(M.method == m) & (M.metric == met)]["ci_hi"].iloc[0] for m in mm]
-    err = [[v-l for v, l in zip(vals, lo)], [h-v for v, h in zip(vals, hi)]]
-    colors = ["#e45756" if m == "di_cqr" else ("#54a24b" if "weighted" in m else "#4c78a8") for m in mm]
-    ax[j].bar(range(len(mm)), vals, yerr=err, capsize=2, color=colors, edgecolor="k", lw=.4)
-    ax[j].set_xticks(range(len(mm))); ax[j].set_xticklabels([PRETTY[m] for m in mm], rotation=40, ha="right", fontsize=8)
-    if met == "worst_region":
-        ax[j].axhline(NOM, ls="--", c="k"); ax[j].set_ylabel("worst-region coverage"); ax[j].set_ylim(0, 1)
-        ax[j].set_title("(a) Worst-region coverage (95% CI)")
-    else:
-        ax[j].set_ylabel("interval score"); ax[j].set_title("(b) Interval score (95% CI)")
-fig.suptitle("Meuse semi-synthetic monitoring bias (real soil data): milder shift, split does not collapse;\n"
-             "DI-CQR gives the best worst-region coverage at a modest width cost", y=1.02)
-fig.tight_layout(); fig.savefig(os.path.join(FIG, "fig6_meuse.png"), bbox_inches="tight"); plt.close(fig)
-
-
-# ---- Fig 7: maps (severe) ----
-G = F["GRID"]
-def grid(a): return np.array(a).reshape(G, G)
-fig, ax = plt.subplots(1, 3, figsize=(13, 4.3)); ext = [0, 1, 0, 1]
-coords = np.array(F["coords"]); cal = np.array(F["cal"])
-im = ax[0].imshow(grid(F["di"]), origin="lower", extent=ext, cmap="magma")
-ax[0].scatter(coords[cal, 0], coords[cal, 1], s=4, c="cyan", lw=0)
-ax[0].set_title("(a) Dissimilarity Index + calibration sites"); fig.colorbar(im, ax=ax[0], fraction=.046)
-for k, (fld, t) in enumerate([("in_split", "(b) Split: miscovered (red)"),
-                              ("in_dicqr", "(c) DI-CQR: miscovered (red)")]):
-    ax[k+1].imshow(1-grid(F[fld]), origin="lower", extent=ext, cmap="Reds", vmin=0, vmax=1)
-    ax[k+1].set_title(t)
-for a in ax: a.set_xticks([]); a.set_yticks([])
-fig.suptitle("Spatial miscoverage (severe, one run): DI-CQR recovers much of the unmonitored periphery", y=1.02)
-fig.tight_layout(); fig.savefig(os.path.join(FIG, "fig7_maps.png"), bbox_inches="tight"); plt.close(fig)
-
-# ---- Fig 8: DI vs inverse selection weight bridge ----
+# ---- Fig A3: DI against the oracle shift weight ------------------------------------------
 B = pd.read_csv(os.path.join(RES, "sim_bridge.csv")).set_index("regime")
-inv = np.array(F["inv_psel"]); di_f = np.array(F["di"])
-fig, ax = plt.subplots(1, 2, figsize=(11, 4.2))
-sub = np.random.default_rng(0).choice(len(inv), size=2000, replace=False)
-ax[0].scatter(inv[sub], di_f[sub], s=6, alpha=.3, c="#4c78a8", lw=0)
-ax[0].set_xscale("log"); ax[0].set_xlim(np.percentile(inv, 1), np.percentile(inv, 99))
-ax[0].set_xlabel("inverse selection intensity  $1/p_{sel}(x)$ (1--99 pct)")
-ax[0].set_ylabel("Dissimilarity Index");
-ax[0].set_title(f"(a) DI tracks 1/$p_{{sel}}$ (severe run)\nSpearman={B.loc['severe','spearman_DI_invpsel_mean']:.2f}")
-rg = ["mild", "moderate", "severe"]
+fig, ax = plt.subplots(1, 3, figsize=(14, 3.7))
+for j, (F_, lab) in enumerate([(F, "covariate access, severe"), (FH, "hidden access, severe")]):
+    e_ = np.array(F_["ev"]); w = np.array(F_["w_oracle"])[e_]; d_ = np.array(F_["di"])[e_]
+    sub = np.random.default_rng(0).choice(len(w), size=min(2000, len(w)), replace=False)
+    ax[j].scatter(w[sub], d_[sub], s=5, alpha=.35, c="#4c78a8", lw=0)
+    ax[j].set_xscale("log"); ax[j].set_xlabel(r"oracle weight $w=(1-\pi)/\pi$ (log scale)")
+    ax[j].set_ylabel("Dissimilarity Index"); ax[j].set_title(f"({'ab'[j]}) {lab}", loc="left")
+rg = ["mild", "moderate", "severe", "hidden_moderate", "hidden_severe"]
 sp = [B.loc[r, "spearman_DI_invpsel_mean"] for r in rg]
 lo = [B.loc[r, "spearman_ci_lo"] for r in rg]; hi = [B.loc[r, "spearman_ci_hi"] for r in rg]
-err = [[s-l for s, l in zip(sp, lo)], [h-s for s, h in zip(sp, hi)]]
-ax[1].errorbar(range(3), sp, yerr=err, marker="o", capsize=4, c="#e45756")
-ax[1].set_xticks(range(3)); ax[1].set_xticklabels(rg); ax[1].set_ylim(0, 1)
-ax[1].set_xlabel("monitoring-bias regime"); ax[1].set_ylabel("Spearman(DI, 1/$p_{sel}$)")
-ax[1].set_title("(b) Correlation strengthens with bias\n(consistent with the boundary)")
-fig.suptitle("DI vs. selection intensity: the Dissimilarity Index correlates with the inverse\n"
-             "selection intensity, increasingly so as bias grows (an association, not a proven mechanism)", y=1.03)
-fig.tight_layout(); fig.savefig(os.path.join(FIG, "fig8_bridge.png"), bbox_inches="tight"); plt.close(fig)
+ax[2].errorbar(range(5), sp, yerr=[[s - l for s, l in zip(sp, lo)], [h - s for s, h in zip(sp, hi)]],
+               fmt="o", capsize=3, c="#d62728")
+ax[2].set_xticks(range(5)); ax[2].set_xticklabels(["mild", "moderate", "severe", "hidden\nmoderate", "hidden\nsevere"])
+ax[2].set_ylim(0, 1); ax[2].set_ylabel(r"Spearman(DI, $w$)"); ax[2].set_title("(c)", loc="left")
+fig.tight_layout(); save(fig, "figA3_bridge.png")
 
-
-# ---- Fig 9: spatial experimental setup (severe run) ----
-# Central spatial problem, visualised: where monitoring concentrates, which cells
-# are held out for evaluation, the region partition, and the DI surface.
-Gm = F["GRID"]
-def _grid(a): return np.array(a).reshape(Gm, Gm)
-coords = np.array(F["coords"])
-fit_i = np.array(F["fit"]); cal_i = np.array(F["cal"])
-reg_g = _grid(F["reg"]); ext = [0, 1, 0, 1]
-fig, ax = plt.subplots(1, 3, figsize=(14, 4.5))
-
-# (a) selection intensity + region boundaries + monitored sites
-im0 = ax[0].imshow(_grid(F["p_sel"]), origin="lower", extent=ext, cmap="viridis")
-ax[0].contour(np.linspace(0, 1, Gm), np.linspace(0, 1, Gm), reg_g,
-              levels=np.arange(reg_g.max()+1)+0.5, colors="w", linewidths=0.6, alpha=0.6)
-ax[0].scatter(coords[fit_i, 0], coords[fit_i, 1], s=6, c="#ff7f0e", lw=0, label="fitting")
-ax[0].scatter(coords[cal_i, 0], coords[cal_i, 1], s=6, c="cyan", lw=0, label="calibration")
-ax[0].set_title("(a) Monitoring-selection intensity $p_{sel}$\n+ region boundaries + monitored sites")
-ax[0].legend(loc="upper right", fontsize=7, framealpha=0.8); fig.colorbar(im0, ax=ax[0], fraction=.046)
-
-# (b) held-out evaluation cells (unmonitored) vs monitored
-mon_mask = np.zeros(Gm*Gm, bool); mon_mask[np.array(F["mon"])] = True
-panel = np.where(mon_mask, 1.0, 0.15).reshape(Gm, Gm)  # dark = monitored, light = held-out eval
-ax[1].imshow(panel, origin="lower", extent=ext, cmap="Greys", vmin=0, vmax=1.0)
-ax[1].contour(np.linspace(0, 1, Gm), np.linspace(0, 1, Gm), reg_g,
-              levels=np.arange(reg_g.max()+1)+0.5, colors="#e45756", linewidths=0.7, alpha=0.8)
-ax[1].scatter(coords[mon_mask, 0], coords[mon_mask, 1], s=4, c="#1f77b4", lw=0)
-ax[1].set_title("(b) Held-out evaluation cells (light)\nmonitored cells excluded (dark, blue points)")
-
-# (c) DI surface + region boundaries
-im2 = ax[2].imshow(_grid(F["di"]), origin="lower", extent=ext, cmap="magma")
-ax[2].contour(np.linspace(0, 1, Gm), np.linspace(0, 1, Gm), reg_g,
-              levels=np.arange(reg_g.max()+1)+0.5, colors="w", linewidths=0.6, alpha=0.6)
-ax[2].set_title("(c) Dissimilarity Index surface\n(high = far from fitting data)")
-fig.colorbar(im2, ax=ax[2], fraction=.046)
-for a in ax: a.set_xticks([]); a.set_yticks([])
-fig.suptitle("The spatial problem (severe-bias run): monitoring concentrates in accessible cells (a); "
-             "models are evaluated only on the\nunmonitored majority (b); dissimilarity is high exactly "
-             "where monitoring is sparse (c) — the signal DI-conditioning exploits", y=1.05)
-fig.tight_layout(); fig.savefig(os.path.join(FIG, "fig9_setup.png"), bbox_inches="tight"); plt.close(fig)
+# ---- Fig A4: Meuse ---------------------------------------------------------------------
+M = pd.read_csv(os.path.join(RES, "meuse_summary.csv"))
+mm = ["split", "normalized", "cqr", "di_normalized", "di_mondrian", "di_cqr", "di_cqr_K2",
+      "lcp", "lcp_cqr", "geo_lcp", "weighted_estimated"]
+fig, ax = plt.subplots(1, 2, figsize=(11, 3.8))
+for j, met in enumerate(["worst_region", "mean_interval_score"]):
+    vals = [M[(M.method == m) & (M.metric == met)]["mean"].iloc[0] for m in mm]
+    sd = [M[(M.method == m) & (M.metric == met)]["sd"].iloc[0] for m in mm]
+    colors = ["#d62728" if m.startswith("di_cqr") else ("#9467bd" if "lcp" in m else
+              ("#54a24b" if "weighted" in m else "#9ab0c8")) for m in mm]
+    ax[j].bar(range(len(mm)), vals, yerr=sd, capsize=1.5, color=colors, edgecolor="k", lw=.3, error_kw=dict(lw=0.6))
+    ax[j].set_xticks(range(len(mm))); ax[j].set_xticklabels([PRETTY[m] for m in mm], rotation=45, ha="right", fontsize=7.5)
+    ax[j].set_title(f"({'ab'[j]})", loc="left")
+    if met == "worst_region":
+        ax[j].axhline(NOM, ls="--", c="k", lw=0.8); ax[j].set_ylabel("worst-region coverage"); ax[j].set_ylim(0, 1.05)
+    else:
+        ax[j].set_ylabel("interval score")
+fig.tight_layout(); save(fig, "figA4_meuse.png")
 
 print("figures written:", sorted(os.listdir(FIG)))

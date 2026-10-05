@@ -7,6 +7,10 @@ N_MON points to a random seed), split it into fitting/calibration, and hold out
 the geographically separated remaining sites as test (subsampled for tractability).
 Worst-region coverage uses the fixed 10 k-means regions. Same methods, metrics and
 leakage controls as run_meuse. Resumable.
+
+  python prep_lucas.py <dir with the ESDAC files>   # -> ../results/lucas_prepared.csv
+  python run_lucas.py                                # -> ../results/lucas_raw.jsonl
+  python run_lucas.py agg                            # -> lucas_summary.csv, lucas_sig.json
 """
 import json, os, sys, time, numpy as np, pandas as pd
 from sklearn.ensemble import RandomForestRegressor, HistGradientBoostingRegressor
@@ -18,11 +22,12 @@ RAW = os.path.join(RES, "lucas_raw.jsonl")
 ALPHA, NOMINAL = 0.10, 0.90
 N_MON, CAL_FRAC, N_TEST, K = 1800, 0.4, 2500, 5
 REPS = 20
-BUDGET = 33.0
+BUDGET = float(os.environ.get("BUDGET", "inf"))
 RF = dict(n_estimators=150, n_jobs=-1, min_samples_leaf=3, random_state=0)
-METHODS = ["split", "normalized", "di_normalized", "region_mondrian",
-           "di_mondrian", "cqr", "di_cqr", "localized", "geo_localized",
-           "weighted_estimated"]
+METHODS = ["split", "normalized", "di_normalized", "di_normalized_clip",
+           "di_normalized_auto", "region_mondrian", "di_mondrian", "cqr", "di_cqr",
+           "di_cqr_auto", "lcp", "lcp_cqr", "geo_lcp", "weighted_estimated"]
+UNBOUNDED_METHODS = ["lcp", "lcp_cqr", "geo_lcp", "weighted_estimated"]
 _DF = None
 _PRED = None
 
@@ -72,7 +77,11 @@ def one_rep(seed):
     w_c, w_t = est_weights(Xf, Xc, Xt, seed)
     cap = 3.0 * (yf.max() - yf.min())
 
-    iv = {
+    bw_feat = CF.median_bandwidth(aoa.transform(Xf, Xf, w_imp))
+    bw_geo = CF.median_bandwidth(coords[fit])
+    K_sel = CF.select_K_di_cqr(qlo_c, qhi_c, yc, di_c, ALPHA, min_n=15, seed=seed)
+    kap_sel = CF.select_kappa_di_normalized(mu_c, yc, di_c, ALPHA, seed=seed)
+    raw = {
         "split": CF.split(mu_c, yc, mu_t, ALPHA),
         "normalized": CF.normalized(mu_c, yc, sig_c, mu_t, sig_t, ALPHA),
         "di_normalized": CF.di_normalized(mu_c, yc, di_c, mu_t, di_t, ALPHA),
@@ -80,11 +89,32 @@ def one_rep(seed):
         "di_mondrian": CF.di_mondrian(mu_c, yc, di_c, mu_t, di_t, ALPHA, K=K),
         "cqr": CF.cqr(qlo_c, qhi_c, yc, qlo_t, qhi_t, ALPHA),
         "di_cqr": CF.di_cqr(qlo_c, qhi_c, yc, di_c, qlo_t, qhi_t, di_t, ALPHA, K=K),
-        "localized": CF.localized_tuned(mu_c, yc, feat_c, mu_t, feat_t, ALPHA),
-        "geo_localized": CF.localized_tuned(mu_c, yc, cc, mu_t, ct, ALPHA),
-        "weighted_estimated": CF.weighted_split(mu_c, yc, w_c, mu_t, w_t, ALPHA, cap=cap),
+        "di_normalized_clip": CF.di_normalized_clipped(mu_c, yc, di_c, mu_t, di_t, ALPHA),
+        "di_normalized_auto": CF.di_normalized(mu_c, yc, di_c, mu_t, di_t, ALPHA, floor=kap_sel),
+        "di_cqr_auto": CF.di_cqr(qlo_c, qhi_c, yc, di_c, qlo_t, qhi_t, di_t, ALPHA, K=K_sel),
+        "lcp": CF.lcp(mu_c, yc, feat_c, mu_t, feat_t, ALPHA, bw_feat),
+        "lcp_cqr": CF.lcp_cqr(qlo_c, qhi_c, yc, feat_c, qlo_t, qhi_t, feat_t, ALPHA, bw_feat),
+        "geo_lcp": CF.lcp(mu_c, yc, cc, mu_t, ct, ALPHA, bw_geo),
+        "weighted_estimated": CF.weighted_split(mu_c, yc, w_c, mu_t, w_t, ALPHA),
     }
-    out = {"seed": seed, "n_test": int(len(test)), "methods": {}}
+    unbounded = {m: float(np.mean(~np.isfinite(raw[m][2]))) for m in UNBOUNDED_METHODS}
+    iv = {}
+    for name, (lo, hi, half) in raw.items():
+        if name == "lcp_cqr":
+            lo = np.where(np.isfinite(lo), lo, qlo_t - cap)
+            hi = np.where(np.isfinite(hi), hi, qhi_t + cap)
+            half = (hi - lo) / 2.0
+        elif name in UNBOUNDED_METHODS:
+            half = np.where(np.isfinite(half), half, cap)
+            lo, hi = mu_t - half, mu_t + half
+        iv[name] = (lo, hi, half)
+    # DI scale diagnostics: how far test queries extrapolate beyond calibration
+    out = {"seed": seed, "n_test": int(len(test)), "unbounded": unbounded,
+           "selected": {"K": int(K_sel), "kappa": float(kap_sel)},
+           "di": dict(cal_mean=float(di_c.mean()), cal_max=float(di_c.max()),
+                      test_median=float(np.median(di_t)), test_p95=float(np.percentile(di_t, 95)),
+                      frac_test_above_cal_max=float(np.mean(di_t > di_c.max()))),
+           "methods": {}}
     for name, (lo, hi, half) in iv.items():
         rt = MET.per_region(reg_t, yt, lo, hi, ALPHA)
         covs = np.array([v["coverage"] for v in rt.values()])
@@ -121,13 +151,24 @@ def agg():
     g = g.reset_index()
     g.to_csv(os.path.join(RES, "lucas_summary.csv"), index=False)
     sig = {}
-    for tgt in ["di_normalized", "di_cqr"]:
-        for base in ["split", "localized"]:
+    for tgt in ["di_normalized", "di_normalized_clip", "di_cqr"]:
+        for base in ["split", "cqr", "lcp", "lcp_cqr"]:
             a = df[df.method == tgt].sort_values("seed")["mean_interval_score"].to_numpy()
             b = df[df.method == base].sort_values("seed")["mean_interval_score"].to_numpy()
             sig[f"{tgt}-{base}"] = dict(diff=float((a-b).mean()),
                 t_p=float(stats.ttest_rel(a, b).pvalue), w_p=float(stats.wilcoxon(a, b).pvalue))
+    a = df[df.method == "di_normalized_clip"].sort_values("seed")["mean_interval_score"].to_numpy()
+    b = df[df.method == "di_normalized"].sort_values("seed")["mean_interval_score"].to_numpy()
+    sig["di_normalized_clip-di_normalized"] = dict(diff=float((a - b).mean()),
+        t_p=float(stats.ttest_rel(a, b).pvalue), w_p=float(stats.wilcoxon(a, b).pvalue))
     json.dump(sig, open(os.path.join(RES, "lucas_sig.json"), "w"), indent=2)
+    diag = dict(
+        unbounded={m: float(np.mean([r["unbounded"][m] for r in runs])) for m in UNBOUNDED_METHODS},
+        di={k: float(np.mean([r["di"][k] for r in runs])) for k in runs[0]["di"]},
+        selected_K_mode=int(pd.Series([r["selected"]["K"] for r in runs]).mode().iloc[0]),
+        selected_kappa_mean=float(np.mean([r["selected"]["kappa"] for r in runs])))
+    json.dump(diag, open(os.path.join(RES, "lucas_diag.json"), "w"), indent=2)
+    print("diag:", diag)
     print(g[["method", "marginal_mean", "worst_region_mean", "mean_width_mean", "mean_interval_score_mean"]].round(3).to_string(index=False))
     print("sig:", {k: (round(v["diff"], 2), f"{v['t_p']:.1e}", f"{v['w_p']:.1e}") for k, v in sig.items()})
 

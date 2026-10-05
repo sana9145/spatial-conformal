@@ -7,5 +7,15 @@
   "min_bin_count": 10.0,
   "mean_fallback_bins": 0.0,
   "frac_reps_any_fallback": 0.0,
-  "mean_frac_test_clipped": 0.06666666666666667
+  "mean_frac_test_clipped": 0.06666666666666667,
+  "frac_bins_level_one": 1.0,
+  "min_test_per_region": 1,
+  "median_test_per_region": 12.0,
+  "n_regions_with_test": 2.5,
+  "unbounded": {
+    "lcp": 0.0,
+    "lcp_cqr": 0.0,
+    "geo_lcp": 0.4090909090909091,
+    "weighted_estimated": 0.373939393939394
+  }
 }

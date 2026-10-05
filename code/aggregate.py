@@ -1,5 +1,6 @@
 """aggregate.py -- turn sim_raw.jsonl into tidy CSV/JSON result tables with
-mean, sd, 95% CI, and paired seed-level differences (DI-CQR vs each baseline)."""
+mean, sd, 95% CI, and paired seed-level differences (DI-CQR vs each baseline),
+including Holm-adjusted p-values for the families of baseline comparisons."""
 import json, os, numpy as np, pandas as pd
 from scipy import stats
 
@@ -8,7 +9,25 @@ RAW = os.path.join(RES, "sim_raw.jsonl")
 METRICS = ["true_marginal", "worst_region_coverage", "coverage_gap",
            "mean_width", "mean_interval_score", "coverage_rmse",
            "cond_cov_error_mean", "cond_cov_error_max", "frac_infinite"]
-REGIME_ORDER = ["none", "mild", "moderate", "severe"]
+REGIME_ORDER = ["none", "mild", "moderate", "severe", "hidden_moderate", "hidden_severe"]
+COVARIATE_BIASED = ["mild", "moderate", "severe"]
+# Holm families: all DI-CQR-vs-baseline comparisons of one metric within a group
+# of regimes (the two strong covariate regimes, and the two hidden regimes)
+HOLM_GROUPS = {"covariate": ["moderate", "severe"],
+               "hidden": ["hidden_moderate", "hidden_severe"]}
+
+
+def holm(pvals):
+    """Holm step-down adjusted p-values (family-wise error control)."""
+    p = np.asarray(pvals, float)
+    m = len(p)
+    order = np.argsort(p)
+    adj = np.empty(m)
+    running = 0.0
+    for rank, i in enumerate(order):
+        running = max(running, (m - rank) * p[i])
+        adj[i] = min(1.0, running)
+    return adj
 
 
 def ci95(x):
@@ -76,6 +95,17 @@ def main():
                                   ci_lo=float(lo), ci_hi=float(hi),
                                   p_value=float(p), wilcoxon_p=wp))
     paired = pd.DataFrame(prows)
+    paired["p_holm"] = np.nan
+    paired["wilcoxon_p_holm"] = np.nan
+    for grp, regs in HOLM_GROUPS.items():
+        for k in paired.metric.unique():
+            msk = paired.regime.isin(regs) & (paired.metric == k)
+            # comparisons against the auto-tuned DI-CQR variant are not part of
+            # the baseline family (it is the same method with a different K)
+            msk &= paired.baseline != "di_cqr_auto"
+            if msk.sum():
+                paired.loc[msk, "p_holm"] = holm(paired.loc[msk, "p_value"].to_numpy())
+                paired.loc[msk, "wilcoxon_p_holm"] = holm(paired.loc[msk, "wilcoxon_p"].fillna(1.0).to_numpy())
     paired.to_csv(os.path.join(RES, "sim_paired_diffs.csv"), index=False)
 
     # ---- ablation table
@@ -111,7 +141,7 @@ def main():
 
     # ---- DI vs inverse-selection-weight bridge (per biased regime)
     brows = []
-    for rg in ["mild", "moderate", "severe"]:
+    for rg in ["mild", "moderate", "severe", "hidden_moderate", "hidden_severe"]:
         sp = [r["di_selweight_spearman"] for r in runs
               if r["regime"] == rg and r.get("di_selweight_spearman") is not None]
         pe = [r["di_logselweight_pearson"] for r in runs
@@ -163,7 +193,8 @@ def main():
                          gain_IS_vs_split=M["split"]["mean_interval_score"] - M["di_cqr"]["mean_interval_score"],
                          gain_worst_vs_split=M["di_cqr"]["worst_region_coverage"] - M["split"]["worst_region_coverage"]))
     mdf = pd.DataFrame(recs)
-    groups = [(rg, mdf[mdf.regime == rg]) for rg in ["mild", "moderate", "severe"]]
+    mdf = mdf[mdf.regime.isin(COVARIATE_BIASED)]
+    groups = [(rg, mdf[mdf.regime == rg]) for rg in COVARIATE_BIASED]
     groups.append(("pooled_biased", mdf))
     mech = []
     for grp, sub in groups:
@@ -252,24 +283,41 @@ def main():
                               kappa_mode=float(sub.kappa.mode().iloc[0])))
         pd.DataFrame(srows).to_csv(os.path.join(RES, "sim_selection.csv"), index=False)
 
-    # ---- weighted-conformal capped-interval fraction by regime
-    wrows = []
-    for r in runs:
-        wc = r.get("weighted_capped")
-        if not wc:
-            continue
-        for m, frac in wc.items():
-            wrows.append(dict(regime=r["regime"], seed=r["seed"], method=m, frac_capped=frac))
-    if wrows:
-        wdf = pd.DataFrame(wrows)
-        wsum = (wdf.groupby(["regime", "method"])["frac_capped"]
-                .agg(["mean", "std"]).reset_index())
-        wsum.to_csv(os.path.join(RES, "sim_weighted_capped.csv"), index=False)
+    # ---- unbounded-interval fraction (before capping) by regime and method
+    urows = [dict(regime=r["regime"], seed=r["seed"], method=m, frac_unbounded=f)
+             for r in runs for m, f in (r.get("unbounded") or {}).items()]
+    if urows:
+        (pd.DataFrame(urows).groupby(["regime", "method"])["frac_unbounded"]
+         .agg(["mean", "std"]).reset_index()
+         .to_csv(os.path.join(RES, "sim_unbounded.csv"), index=False))
 
-    # ---- representative fields for maps (severe seed 0)
+    # ---- Kish effective sample size of the weighted-conformal calibration weights
+    erows = [dict(regime=r["regime"], seed=r["seed"], method=m, ess=v)
+             for r in runs for m, v in (r.get("weight_ess") or {}).items()]
+    if erows:
+        (pd.DataFrame(erows).groupby(["regime", "method"])["ess"]
+         .agg(["mean", "median", "std"]).reset_index()
+         .to_csv(os.path.join(RES, "sim_weight_ess.csv"), index=False))
+
+    # ---- localized-conformal mechanism: local calibration mass and unbounded
+    # rate for queries inside vs beyond the calibration DI range
+    lrows = []
+    for r in runs:
+        for grp, d in (r.get("lcp_mass") or {}).items():
+            if d.get("median_mass") is not None:
+                lrows.append(dict(regime=r["regime"], seed=r["seed"], group=grp, **d))
+    if lrows:
+        (pd.DataFrame(lrows).groupby(["regime", "group"])
+         .agg(median_mass=("median_mass", "mean"), frac_unbounded=("frac_unbounded", "mean"),
+              n_runs=("seed", "count")).reset_index()
+         .to_csv(os.path.join(RES, "sim_lcp_mass.csv"), index=False))
+
+    # ---- representative fields for maps (seed 0, covariate and hidden severe)
     import run_sim as R
     rep = R.one_run("severe", 0, save_fields=True)
     json.dump(rep["_fields"], open(os.path.join(RES, "sim_fields_severe.json"), "w"))
+    rep = R.one_run("hidden_severe", 0, save_fields=True)
+    json.dump(rep["_fields"], open(os.path.join(RES, "sim_fields_hidden_severe.json"), "w"))
 
     print("wrote sim_per_run.csv, sim_summary.csv, sim_paired_diffs.csv,")
     print("      sim_ablation_per_run.csv, sim_ablation_summary.csv, sim_sweep_summary.csv,")

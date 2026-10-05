@@ -23,13 +23,21 @@ Leakage prevention (applies throughout):
 import numpy as np
 
 
+def conformal_rank(m, alpha):
+    """k = ceil((m+1)(1-alpha)), guarded against floating-point round-up
+    (e.g. 20 * 0.9 evaluates to 18.000000000000004)."""
+    return int(np.ceil((m + 1) * (1 - alpha) - 1e-9))
+
+
 def conformal_quantile(scores, alpha):
-    """Finite-sample split-conformal quantile of 1-D scores."""
+    """Finite-sample split-conformal quantile: the k-th smallest of m scores with
+    k = ceil((m+1)(1-alpha)). If k > m (fewer than about 1/alpha scores) the
+    largest score is used; this fallback does not keep the usual guarantee."""
     m = len(scores)
     if m == 0:
         return np.inf
-    level = min(1.0, np.ceil((m + 1) * (1 - alpha)) / m)
-    return float(np.quantile(scores, level, method="higher"))
+    k = conformal_rank(m, alpha)
+    return float(np.sort(np.asarray(scores, float))[min(k, m) - 1])
 
 
 # ---------------------------------------------------------------- basic
@@ -135,68 +143,114 @@ def weighted_split(mu_cal, y_cal, w_cal, mu_q, w_q, alpha, cap=None):
     return mu_q - half, mu_q + half, half
 
 
-def localized_conformal(mu_cal, y_cal, feat_cal, mu_q, feat_q, alpha,
-                        bandwidth=None, batch=512):
-    """Localized conformal prediction (Guan 2023): the interval half-width at a
-    query is a *kernel-weighted* conformal quantile of calibration
-    non-conformity scores, with weights = Gaussian kernel of feature-space
-    distance between the query and each calibration point. Continuous cousin of
-    DI-binning. `feat_*` are the (fitting-standardised, importance-weighted)
-    embeddings; use coordinates for a geographic-localized variant.
+def di_normalized_clipped(mu_cal, y_cal, di_cal, mu_q, di_q, alpha, floor=0.25):
+    """DI-normalized with the query DI truncated at the largest calibration DI.
+    Diagnostic variant: it bounds the normalizer exactly where DI-CQR clips its
+    bins, so it isolates whether DI-normalized's over-widening comes from the
+    unbounded growth of g(d) beyond the calibration DI range."""
+    d_q = np.minimum(di_q, np.max(di_cal))
+    return normalized(mu_cal, y_cal, floor + di_cal, mu_q, floor + d_q, alpha)
 
-    Leakage: scores/feat from fitting+calibration only; bandwidth from the
-    median calibration pairwise distance (no test labels).
+
+# ---------------------------------------------------------------- localized
+def median_bandwidth(feat_fit, max_n=2000, seed=0):
+    """Median pairwise Euclidean distance among FITTING-set feature vectors.
+    Label-free and independent of the calibration and test data, so the kernel
+    is fixed before conformalization (as Guan's guarantee requires)."""
+    from scipy.spatial.distance import pdist
+    F = np.asarray(feat_fit, float)
+    if len(F) > max_n:
+        F = F[np.random.default_rng(seed).choice(len(F), max_n, replace=False)]
+    return float(np.median(pdist(F))) + 1e-12
+
+
+def lcp_threshold(scores_cal, feat_cal, feat_q, alpha, bandwidth, batch=256):
+    """Localized conformal prediction (Guan 2023, Biometrika 110:33-50).
+
+    Gaussian localizer H(x, x') = exp(-|x - x'|^2 / (2 h^2)) with a FIXED
+    bandwidth. For the augmented sample (calibration points plus the query with
+    a candidate score v), each point i gets the localized CDF
+        F_i = sum_j H_ij / (sum_k H_ik) * delta_{V_j}
+    and the statistic c_i = F_i(V_i^-), the localized mass strictly below its own
+    score. Guan's level adjustment (choose the smallest level alpha~ such that a
+    fraction >= 1 - alpha of the n+1 points satisfy V_i <= Q(alpha~; F_i)) makes
+    the candidate v admissible iff c_{n+1}(v) is no larger than the k-th
+    smallest of {c_1(v), ..., c_{n+1}(v)}, with k = ceil((1-alpha)(n+1)).
+    Because the c_i are a permutation-equivariant function of the n+1
+    exchangeable points, this has finite-sample marginal coverage >= 1 - alpha
+    under exchangeability. The admissible set is {v <= v*}; v* is found by a
+    vectorised bisection over the sorted calibration scores. v* = +inf when the
+    query carries too little localized calibration mass (the query's own atom
+    then dominates its localized distribution).
+
+    Returns (v_star, local_mass) where local_mass = sum_j H(x_q, x_j) is the
+    kernel-weighted number of calibration points near each query.
     """
     from scipy.spatial.distance import cdist
-    s = np.abs(y_cal - mu_cal)
-    order = np.argsort(s)
-    s_sorted = s[order]
-    fc = np.asarray(feat_cal, float)[order]
-    if bandwidth is None:
-        dc = cdist(fc, fc)
-        bandwidth = np.median(dc[dc > 0]) + 1e-12
-    n = len(s_sorted)
-    level = min(1.0, (1 - alpha) * (1 + 1.0 / n))
-    fq = np.asarray(feat_q, float)
-    half = np.empty(len(fq))
-    for i in range(0, len(fq), batch):                 # batch to bound memory
-        D = cdist(fq[i:i+batch], fc)
-        W = np.exp(-(D ** 2) / (2 * bandwidth ** 2)) + 1e-12
-        frac = np.cumsum(W, axis=1) / W.sum(1, keepdims=True)
-        idx = np.clip((frac >= level).argmax(axis=1), 0, n - 1)
-        half[i:i+batch] = s_sorted[idx]
-    return mu_q - half, mu_q + half, half
+    V = np.asarray(scores_cal, float)
+    order = np.argsort(V, kind="mergesort")
+    Vs = V[order]
+    Fc = np.asarray(feat_cal, float)[order]
+    n = len(Vs)
+    k = conformal_rank(n, alpha)
+    g = 1.0 / (2.0 * bandwidth ** 2)
+    H = np.exp(-g * cdist(Fc, Fc) ** 2)                  # includes H_ii = 1
+    S = H.sum(1)
+    n_less = np.searchsorted(Vs, Vs, side="left")        # #{j: V_j < V_i}
+    Hc = np.cumsum(H, axis=1)
+    B = np.where(n_less > 0, Hc[np.arange(n), np.maximum(n_less - 1, 0)], 0.0)
+
+    Fq = np.asarray(feat_q, float)
+    v_star = np.empty(len(Fq))
+    mass = np.empty(len(Fq))
+    for s0 in range(0, len(Fq), batch):
+        h = np.exp(-g * cdist(Fq[s0:s0 + batch], Fc) ** 2)      # (Q, n)
+        Q = h.shape[0]
+        sh = h.sum(1)
+        ch = np.cumsum(h, axis=1)
+        mass[s0:s0 + batch] = sh
+
+        def admissible(m):
+            # candidate v in the open cell (Vs[m-1], Vs[m]); m = n means v > all
+            c_test = np.where(m > 0, ch[np.arange(Q), np.maximum(m - 1, 0)], 0.0) / (sh + 1.0)
+            thr = Vs[np.minimum(m, n - 1)]
+            above = Vs[None, :] >= thr[:, None]
+            above[m == n] = False
+            c = (B[None, :] + h * above) / (S[None, :] + h)
+            return (c < c_test[:, None]).sum(1) <= k - 1
+
+        lo = np.zeros(Q, int)              # admissible(0) is always True
+        hi = np.full(Q, n + 1, int)        # sentinel: first inadmissible cell
+        while np.any(hi - lo > 1):
+            mid = (lo + hi) // 2
+            ok = admissible(mid)
+            lo = np.where(ok, mid, lo)
+            hi = np.where(ok, hi, mid)
+        v_star[s0:s0 + batch] = np.where(lo < n, Vs[np.minimum(lo, n - 1)], np.inf)
+    return v_star, mass
 
 
-def localized_tuned(mu_cal, y_cal, feat_cal, mu_q, feat_q, alpha,
-                    mults=(0.5, 1.0, 2.0)):
-    """Localized conformal with the kernel bandwidth chosen fairly on the
-    calibration set only: for each candidate bandwidth we form leave-one-out
-    localized intervals for the calibration points and pick the bandwidth with the
-    lowest calibration interval (Winkler) score. No test labels are used."""
-    from scipy.spatial.distance import cdist
-    s = np.abs(y_cal - mu_cal)
-    fc = np.asarray(feat_cal, float)
-    dcc = cdist(fc, fc)
-    base_bw = np.median(dcc[dcc > 0]) + 1e-12
-    n = len(s)
-    level = min(1.0, (1 - alpha) * (1 + 1.0 / n))
-    order = np.argsort(s)
-    s_sorted = s[order]
+def lcp(mu_cal, y_cal, feat_cal, mu_q, feat_q, alpha, bandwidth, cap=None,
+        return_mass=False):
+    """Localized conformal on absolute residuals: mu(x) +/- v*(x)."""
+    v, mass = lcp_threshold(np.abs(y_cal - mu_cal), feat_cal, feat_q, alpha, bandwidth)
+    if cap is not None:
+        v = np.where(np.isfinite(v), v, cap)
+    out = (mu_q - v, mu_q + v, v)
+    return (out + (mass,)) if return_mass else out
 
-    best_bw, best_score = base_bw, np.inf
-    for mlt in mults:
-        bw = base_bw * mlt
-        W = np.exp(-(dcc ** 2) / (2 * bw ** 2))
-        np.fill_diagonal(W, 0.0)                       # leave-one-out
-        Wc = W[:, order]
-        frac = np.cumsum(Wc, axis=1) / (Wc.sum(1, keepdims=True) + 1e-12)
-        idx = np.clip((frac >= level).argmax(axis=1), 0, n - 1)
-        half_cal = s_sorted[idx]
-        sc = np.mean(_interval_score(y_cal, mu_cal - half_cal, mu_cal + half_cal, alpha))
-        if sc < best_score:
-            best_score, best_bw = sc, bw
-    return localized_conformal(mu_cal, y_cal, feat_cal, mu_q, feat_q, alpha, bandwidth=best_bw)
+
+def lcp_cqr(qlo_cal, qhi_cal, y_cal, feat_cal, qlo_q, qhi_q, feat_q, alpha,
+            bandwidth, cap=None):
+    """Localized conformal on CQR scores: [q_lo(x) - v*, q_hi(x) + v*]. The
+    apples-to-apples localized counterpart of DI-CQR (same score, same quantile
+    models; only the way calibration is localized differs)."""
+    E = np.maximum(qlo_cal - y_cal, y_cal - qhi_cal)
+    v, _ = lcp_threshold(E, feat_cal, feat_q, alpha, bandwidth)
+    if cap is not None:
+        v = np.where(np.isfinite(v), v, cap)
+    lo, hi = qlo_q - v, qhi_q + v
+    return lo, hi, (hi - lo) / 2.0
 
 
 def _interval_score(y, lo, hi, alpha):
@@ -209,53 +263,6 @@ def width_matched_global(mu_q, target_mean_width):
     """Constant-width interval around mu whose mean width equals target."""
     half = np.full_like(mu_q, target_mean_width / 2.0)
     return mu_q - half, mu_q + half, half
-
-
-def localized_cqr(qlo_cal, qhi_cal, y_cal, feat_cal, qlo_q, qhi_q, feat_q, alpha,
-                  mults=(0.5, 1.0, 2.0), batch=512):
-    """Kernel-localized CQR: the offset applied to a query's quantile-regression
-    interval is a Gaussian-kernel-weighted quantile (in feature space) of the CQR
-    non-conformity scores E_i = max(q_lo(x_i)-y_i, y_i-q_hi(x_i)). This is the
-    apples-to-apples localized counterpart of DI-CQR (same kernel and
-    calibration-only bandwidth tuning as the kernel-localized residual comparator,
-    but on CQR scores and applied to the quantile interval), isolating whether
-    DI-CQR's edge is the DI grouping rather than merely the CQR score.
-    Bandwidth is chosen on the calibration set only by leave-one-out interval score;
-    no test labels are used."""
-    from scipy.spatial.distance import cdist
-    E = np.maximum(qlo_cal - y_cal, y_cal - qhi_cal)
-    fc = np.asarray(feat_cal, float)
-    dcc = cdist(fc, fc)
-    base_bw = np.median(dcc[dcc > 0]) + 1e-12
-    n = len(E)
-    level = min(1.0, (1 - alpha) * (1 + 1.0 / n))
-    order = np.argsort(E)
-    E_sorted = E[order]
-    # tune bandwidth on calibration LOO CQR interval score
-    best_bw, best_score = base_bw, np.inf
-    for mlt in mults:
-        bw = base_bw * mlt
-        W = np.exp(-(dcc ** 2) / (2 * bw ** 2))
-        np.fill_diagonal(W, 0.0)
-        Wc = W[:, order]
-        frac = np.cumsum(Wc, axis=1) / (Wc.sum(1, keepdims=True) + 1e-12)
-        idx = np.clip((frac >= level).argmax(axis=1), 0, n - 1)
-        Qcal = E_sorted[idx]
-        sc = np.mean(_interval_score(y_cal, qlo_cal - Qcal, qhi_cal + Qcal, alpha))
-        if sc < best_score:
-            best_score, best_bw = sc, bw
-    # apply at queries with best bandwidth
-    fc_ord = fc[order]
-    fq = np.asarray(feat_q, float)
-    Q = np.empty(len(fq))
-    for i in range(0, len(fq), batch):
-        D = cdist(fq[i:i+batch], fc_ord)
-        Wq = np.exp(-(D ** 2) / (2 * best_bw ** 2)) + 1e-12
-        frac = np.cumsum(Wq, axis=1) / Wq.sum(1, keepdims=True)
-        idx = np.clip((frac >= level).argmax(axis=1), 0, n - 1)
-        Q[i:i+batch] = E_sorted[idx]
-    lo, hi = qlo_q - Q, qhi_q + Q
-    return lo, hi, (hi - lo) / 2.0
 
 
 # ---------------------------------------------------------------- hyperparameter

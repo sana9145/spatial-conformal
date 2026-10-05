@@ -12,7 +12,13 @@ holding out the geographically SEPARATED remaining measured sites as the test
 set. Ground truth at test sites is the real measured zinc.
 
 K=4 DI bins chosen a priori (small calibration set ~40 -> ~10 points/bin), not
-tuned on test outcomes.
+tuned on test outcomes. With m <= 18 scores in a bin the finite-sample level
+ceil((m+1)(1-alpha))/m reaches 1, so each DI-CQR bin then uses its largest
+calibration score; we record this and also report DI-CQR with K=2 (~20 points
+per bin), where the level stays below 1.
+
+  python run_meuse.py           # resumable -> ../results/meuse_raw_results.jsonl
+  python run_meuse.py agg       # -> ../results/meuse_summary.csv, meuse_diag.json
 """
 import json, os, numpy as np, pandas as pd
 from sklearn.ensemble import RandomForestRegressor, HistGradientBoostingRegressor
@@ -31,8 +37,9 @@ K = 4
 REPS = 30
 RF = dict(n_estimators=300, n_jobs=-1, min_samples_leaf=2, random_state=0)
 METHODS = ["split", "normalized", "di_normalized", "di_normalized_auto",
-           "region_mondrian", "di_mondrian", "cqr", "di_cqr", "di_cqr_auto",
-           "localized", "localized_cqr", "geo_localized", "weighted_estimated"]
+           "region_mondrian", "di_mondrian", "cqr", "di_cqr", "di_cqr_K2", "di_cqr_auto",
+           "lcp", "lcp_cqr", "geo_lcp", "weighted_estimated"]
+UNBOUNDED_METHODS = ["lcp", "lcp_cqr", "geo_lcp", "weighted_estimated"]
 
 
 def load():
@@ -114,7 +121,9 @@ def one_rep(df, seed):
                                K_grid=(2, 3, 4, 5, 6), n_folds=5, min_n=6, seed=seed)
     kap_sel = CF.select_kappa_di_normalized(mu_c, yc, di_c, ALPHA, n_folds=5, seed=seed)
 
-    iv = {
+    bw_feat = CF.median_bandwidth(aoa.transform(Xf, Xf, w_imp))
+    bw_geo = CF.median_bandwidth(coords[fit])
+    raw = {
         "split": CF.split(mu_c, yc, mu_t, ALPHA),
         "normalized": CF.normalized(mu_c, yc, sig_c, mu_t, sig_t, ALPHA),
         "di_normalized": CF.di_normalized(mu_c, yc, di_c, mu_t, di_t, ALPHA),
@@ -124,11 +133,23 @@ def one_rep(df, seed):
         "di_mondrian": CF.di_mondrian(mu_c, yc, di_c, mu_t, di_t, ALPHA, K=K, min_n=6),
         "cqr": CF.cqr(qlo_c, qhi_c, yc, qlo_t, qhi_t, ALPHA),
         "di_cqr": CF.di_cqr(qlo_c, qhi_c, yc, di_c, qlo_t, qhi_t, di_t, ALPHA, K=K, min_n=6),
-        "localized": CF.localized_tuned(mu_c, yc, feat_c, mu_t, feat_t, ALPHA),
-        "localized_cqr": CF.localized_cqr(qlo_c, qhi_c, yc, feat_c, qlo_t, qhi_t, feat_t, ALPHA),
-        "geo_localized": CF.localized_tuned(mu_c, yc, coords_c, mu_t, coords_t, ALPHA),
-        "weighted_estimated": CF.weighted_split(mu_c, yc, w_c, mu_t, w_t, ALPHA, cap=cap),
+        "di_cqr_K2": CF.di_cqr(qlo_c, qhi_c, yc, di_c, qlo_t, qhi_t, di_t, ALPHA, K=2, min_n=6),
+        "lcp": CF.lcp(mu_c, yc, feat_c, mu_t, feat_t, ALPHA, bw_feat),
+        "lcp_cqr": CF.lcp_cqr(qlo_c, qhi_c, yc, feat_c, qlo_t, qhi_t, feat_t, ALPHA, bw_feat),
+        "geo_lcp": CF.lcp(mu_c, yc, coords_c, mu_t, coords_t, ALPHA, bw_geo),
+        "weighted_estimated": CF.weighted_split(mu_c, yc, w_c, mu_t, w_t, ALPHA),
     }
+    unbounded = {m: float(np.mean(~np.isfinite(raw[m][2]))) for m in UNBOUNDED_METHODS}
+    iv = {}
+    for name, (lo, hi, half) in raw.items():
+        if name == "lcp_cqr":
+            lo = np.where(np.isfinite(lo), lo, qlo_t - cap)
+            hi = np.where(np.isfinite(hi), hi, qhi_t + cap)
+            half = (hi - lo) / 2.0
+        elif name in UNBOUNDED_METHODS:
+            half = np.where(np.isfinite(half), half, cap)
+            lo, hi = mu_t - half, mu_t + half
+        iv[name] = (lo, hi, half)
     # DI-CQR bin diagnostics: exact fit/cal sizes, per-bin calibration counts,
     # how many of the K bins fell back to the global quantile (count < min_n=6),
     # and the fraction of test queries clipped into the top DI bin.
@@ -136,7 +157,13 @@ def one_rep(df, seed):
     edges_m, _, counts_m = CF._di_bin_quantiles(E_c, di_c, ALPHA, K, True, min_n=6)
     n_fallback = int(sum(c < 6 for c in counts_m))
     frac_clip = float(np.mean(di_t > di_c.max()))
+    # finite-sample conformal level actually used in each DI-CQR bin (1.0 = the
+    # bin's largest calibration score), and held-out test sites per region
+    levels = [min(1.0, CF.conformal_rank(c, ALPHA) / c) if c >= 6 else None
+              for c in counts_m]
+    reg_counts = [int((reg_t == r).sum()) for r in np.unique(reg_t)]
     out = {"seed": seed, "n_test": int(len(test)),
+           "bin_levels": levels, "test_per_region": reg_counts, "unbounded": unbounded,
            "n_fit": int(len(fit)), "n_cal": int(len(cal)), "K": K, "min_n": 6,
            "bin_counts": [int(c) for c in counts_m], "n_fallback_bins": n_fallback,
            "frac_test_clipped": frac_clip,
@@ -167,7 +194,7 @@ def work():
         for s in range(REPS):
             if s in done:
                 continue
-            if time.time() - t0 > 35:
+            if time.time() - t0 > float(os.environ.get("BUDGET", "inf")):
                 break
             f.write(json.dumps(one_rep(df, s)) + "\n"); f.flush(); n += 1
     print(f"processed {n}; total {len(done)+n}/{REPS}")
@@ -194,8 +221,24 @@ def main():
         min_bin_count=float(np.mean([min(r["bin_counts"]) for r in runs if "bin_counts" in r])),
         mean_fallback_bins=float(np.mean([r.get("n_fallback_bins", 0) for r in runs])),
         frac_reps_any_fallback=float(np.mean([r.get("n_fallback_bins", 0) > 0 for r in runs])),
-        mean_frac_test_clipped=float(np.mean([r.get("frac_test_clipped", np.nan) for r in runs])))
+        mean_frac_test_clipped=float(np.mean([r.get("frac_test_clipped", np.nan) for r in runs])),
+        frac_bins_level_one=float(np.mean([lv == 1.0 for r in runs for lv in r["bin_levels"]
+                                           if lv is not None])),
+        min_test_per_region=int(min(min(r["test_per_region"]) for r in runs)),
+        median_test_per_region=float(np.median([c for r in runs for c in r["test_per_region"]])),
+        n_regions_with_test=float(np.mean([len(r["test_per_region"]) for r in runs])),
+        unbounded={m: float(np.mean([r["unbounded"][m] for r in runs])) for m in UNBOUNDED_METHODS})
     json.dump(diag, open(os.path.join(RES, "meuse_diag.json"), "w"), indent=2)
+    sig = {}
+    for tgt in ["di_cqr", "di_cqr_K2"]:
+        for base in ["split", "cqr", "lcp", "lcp_cqr"]:
+            for k in ["worst_region", "mean_interval_score"]:
+                a = np.array([r["methods"][tgt][k] for r in runs])
+                b = np.array([r["methods"][base][k] for r in runs])
+                sig[f"{tgt}-{base}:{k}"] = dict(diff=float((a - b).mean()),
+                                                t_p=float(stats.ttest_rel(a, b).pvalue),
+                                                w_p=float(stats.wilcoxon(a, b).pvalue))
+    json.dump(sig, open(os.path.join(RES, "meuse_sig.json"), "w"), indent=2)
 
     # print
     piv = pd.DataFrame(rows).pivot(index="method", columns="metric", values="mean")

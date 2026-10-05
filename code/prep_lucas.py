@@ -7,11 +7,15 @@ soil chemistry, to avoid a circular soil-from-soil task. Coordinates come from t
 shapefile (EPSG:4326), reprojected to the equal-area EPSG:3035 (metres). Regions
 for worst-region coverage are fixed k-means (k=10) clusters on the coordinates.
 Output: ../results/lucas_prepared.csv (Point_ID, x, y, region, logOC, predictors).
+
+Usage: python prep_lucas.py <SRC>, where SRC contains
+  LUCAS2015_topsoildata_20200323/  (topsoil CSV + shapefile folder, from ESDAC)
+  LUCAS2015_AncillaryData_20201007.csv
 """
-import os, numpy as np, pandas as pd, geopandas as gpd
+import os, sys, numpy as np, pandas as pd, geopandas as gpd
 from sklearn.cluster import KMeans
 
-SRC = "/sessions/eloquent-magical-cannon/mnt/flood proj"
+SRC = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(__file__), "..", "data")
 RES = os.path.join(os.path.dirname(__file__), "..", "results")
 SHP = os.path.join(SRC, "LUCAS2015_topsoildata_20200323",
                    "LUCAS_Topsoil_2015_20200323-shapefile",

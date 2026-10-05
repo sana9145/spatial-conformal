@@ -7,14 +7,14 @@ feature weights are taken from permutation importance of the HGB mean model
 (random forests expose feature_importances_; HGB does not). Moderate and severe
 regimes, 30 seeds; same methods, metrics, and leakage controls as run_sim.
 
-  python3 run_robust.py         # resumable -> ../results/robust_raw.jsonl
-  python3 run_robust.py agg     # -> ../results/robust_summary.csv, table_robust.tex
+  python run_robust.py          # resumable -> ../results/robust_raw.jsonl
+  python run_robust.py agg      # -> ../results/robust_summary.csv, table_robust.tex
 """
 import json, os, sys, time, numpy as np
 from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.inspection import permutation_importance
 import aoa, metrics as MET, conformal as CF
-from landscape import make_landscape, region_ids, sample_monitoring, selection_prob
+from landscape import make_landscape, region_ids, sample_monitoring, selection_prob, inclusion_prob
 
 RES = os.path.join(os.path.dirname(__file__), "..", "results")
 PAP = os.path.join(os.path.dirname(__file__), "..", "paper")
@@ -22,10 +22,11 @@ RAW = os.path.join(RES, "robust_raw.jsonl")
 ALPHA, NOMINAL, N_MON, CAL_FRAC, K = 0.10, 0.90, 500, 0.4, 5
 REGIMES = {"moderate": 6.0, "severe": 12.0}
 SEEDS = 30
-BUDGET = 34.0
+BUDGET = float(os.environ.get("BUDGET", "inf"))
 HGB = dict(max_iter=200)
 METHODS = ["split", "normalized", "di_normalized", "cqr", "di_cqr",
-           "localized", "weighted_oracle", "width_matched_global"]
+           "lcp", "lcp_cqr", "weighted_oracle", "width_matched_global"]
+UNBOUNDED_METHODS = ["lcp", "lcp_cqr", "weighted_oracle"]
 
 
 def one_run(regime, seed):
@@ -34,6 +35,7 @@ def one_run(regime, seed):
     X, y, coords, access = make_landscape(rng)
     reg = region_ids(coords)
     p_sel = selection_prob(access, bias)
+    pi_inc = inclusion_prob(p_sel, N_MON)
     mon, _ = sample_monitoring(access, rng, bias, n=N_MON)
     rng.shuffle(mon)
     ncal = int(len(mon) * CAL_FRAC)
@@ -67,17 +69,32 @@ def one_run(regime, seed):
     # held-out evaluation set (unmonitored cells); width-matched baseline matched on it
     ev = np.setdiff1d(np.arange(len(y)), mon)
     dicqr_half_ev = float(np.mean(dicqr[2][ev]))
-    iv = {
+    bw_feat = CF.median_bandwidth(aoa.transform(Xf, Xf, w_imp))
+    w_or = (1.0 - pi_inc) / pi_inc
+    raw = {
         "split": CF.split(mu_c, yc, mu_all, ALPHA),
         "normalized": CF.normalized(mu_c, yc, sig_c, mu_all, sig_all, ALPHA),
         "di_normalized": CF.di_normalized(mu_c, yc, di_c, mu_all, di_all, ALPHA),
         "cqr": CF.cqr(qlo_c, qhi_c, yc, qlo_all, qhi_all, ALPHA),
         "di_cqr": dicqr,
-        "localized": CF.localized_tuned(mu_c, yc, feat_c, mu_all, feat_all, ALPHA),
-        "weighted_oracle": CF.weighted_split(mu_c, yc, 1.0/p_sel[cal], mu_all, 1.0/p_sel, ALPHA, cap=cap),
+        "lcp": CF.lcp(mu_c, yc, feat_c, mu_all, feat_all, ALPHA, bw_feat),
+        "lcp_cqr": CF.lcp_cqr(qlo_c, qhi_c, yc, feat_c, qlo_all, qhi_all, feat_all, ALPHA, bw_feat),
+        "weighted_oracle": CF.weighted_split(mu_c, yc, w_or[cal], mu_all, w_or, ALPHA),
         "width_matched_global": CF.width_matched_global(mu_all, dicqr_half_ev * 2),
     }
-    res = {"regime": regime, "seed": seed, "n_eval": int(len(ev)), "methods": {}}
+    unbounded = {m: float(np.mean(~np.isfinite(raw[m][2][ev]))) for m in UNBOUNDED_METHODS}
+    iv = {}
+    for name, (lo, hi, half) in raw.items():
+        if name == "lcp_cqr":
+            lo = np.where(np.isfinite(lo), lo, qlo_all - cap)
+            hi = np.where(np.isfinite(hi), hi, qhi_all + cap)
+            half = (hi - lo) / 2.0
+        elif name in UNBOUNDED_METHODS:
+            half = np.where(np.isfinite(half), half, cap)
+            lo, hi = mu_all - half, mu_all + half
+        iv[name] = (lo, hi, half)
+    res = {"regime": regime, "seed": seed, "n_eval": int(len(ev)),
+           "unbounded": unbounded, "methods": {}}
     for name, (lo, hi, half) in iv.items():
         rt = MET.per_region(reg[ev], y[ev], lo[ev], hi[ev], ALPHA)
         res["methods"][name] = MET.summarize(rt, y[ev], lo[ev], hi[ev], ALPHA, NOMINAL)
@@ -122,22 +139,26 @@ def agg():
     g.columns = ["_".join(c) for c in g.columns]
     g.reset_index().to_csv(os.path.join(RES, "robust_summary.csv"), index=False)
 
-    # significance: DI-normalized & DI-CQR vs split and localized (interval score)
+    # significance: DI-normalized & DI-CQR vs split, LCP and LCP-CQR (interval score)
     sig = {}
     for rg in REGIMES:
         for tgt in ["di_normalized", "di_cqr"]:
-            for base in ["split", "localized"]:
+            for base in ["split", "cqr", "lcp", "lcp_cqr"]:
                 a = df[(df.regime == rg) & (df.method == tgt)].sort_values("seed")["interval_score"].to_numpy()
                 b = df[(df.regime == rg) & (df.method == base)].sort_values("seed")["interval_score"].to_numpy()
                 sig[f"{rg}:{tgt}-{base}"] = dict(diff=float((a-b).mean()),
                     t_p=float(stats.ttest_rel(a, b).pvalue),
                     w_p=float(stats.wilcoxon(a, b).pvalue))
     json.dump(sig, open(os.path.join(RES, "robust_sig.json"), "w"), indent=2)
+    unb = pd.DataFrame([dict(regime=r["regime"], method=m, frac=f) for r in runs
+                        for m, f in r.get("unbounded", {}).items()])
+    (unb.groupby(["regime", "method"])["frac"].mean().reset_index()
+     .to_csv(os.path.join(RES, "robust_unbounded.csv"), index=False))
 
     # LaTeX table (mean +- sd), moderate & severe
-    pretty = {"split": "Split", "normalized": "Normalized", "di_normalized": r"\textbf{DI-normalized}",
-              "cqr": "CQR", "di_cqr": "DI-CQR", "localized": "Kernel-localized",
-              "weighted_oracle": "Weighted (oracle-proxy)", "width_matched_global": "Width-matched global"}
+    pretty = {"split": "Split", "normalized": "Normalized", "di_normalized": "DI-normalized",
+              "cqr": "CQR", "di_cqr": r"\textbf{DI-CQR}", "lcp": "LCP", "lcp_cqr": "LCP-CQR",
+              "weighted_oracle": "Weighted (oracle)", "width_matched_global": "Width-matched"}
     def cell(rg, m, col, dec=2):
         r = g.reset_index(); r = r[(r.regime == rg) & (r.method == m)].iloc[0]
         return f"{r[col+'_mean']:.{dec}f}\\,$\\pm$\\,{r[col+'_std']:.{dec}f}"
@@ -150,6 +171,7 @@ def agg():
                  f"{cell('moderate',m,'worst')} & {cell('severe',m,'worst')} & "
                  f"{cell('moderate',m,'interval_score',1)} & {cell('severe',m,'interval_score',1)} \\\\")
     L += [r"\bottomrule", r"\end{tabular}"]
+    os.makedirs(PAP, exist_ok=True)
     open(os.path.join(PAP, "table_robust.tex"), "w").write("\n".join(L))
     print("wrote robust_summary.csv, robust_sig.json, table_robust.tex")
     gr = g.reset_index()
@@ -157,7 +179,8 @@ def agg():
         return float(gr[(gr.regime == rg) & (gr.method == m)]["interval_score_mean"].iloc[0])
     for rg in REGIMES:
         print(f"[{rg}]  IS  di_normalized={isc(rg,'di_normalized'):.2f}  di_cqr={isc(rg,'di_cqr'):.2f}  "
-              f"split={isc(rg,'split'):.2f}  localized={isc(rg,'localized'):.2f}")
+              f"split={isc(rg,'split'):.2f}  cqr={isc(rg,'cqr'):.2f}  lcp={isc(rg,'lcp'):.2f}  "
+              f"lcp_cqr={isc(rg,'lcp_cqr'):.2f}")
 
 
 if __name__ == "__main__":

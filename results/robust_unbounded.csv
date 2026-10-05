@@ -1,0 +1,7 @@
+regime,method,frac
+moderate,lcp,0.0934243803743045
+moderate,lcp_cqr,0.09280475467880626
+moderate,weighted_oracle,0.5253161355589276
+severe,lcp,0.17921092564491653
+severe,lcp_cqr,0.17828780981284773
+severe,weighted_oracle,0.7773267577137076

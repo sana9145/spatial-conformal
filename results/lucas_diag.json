@@ -1,0 +1,17 @@
+{
+  "unbounded": {
+    "lcp": 0.24364,
+    "lcp_cqr": 0.24346,
+    "geo_lcp": 0.6173399999999999,
+    "weighted_estimated": 0.7323999999999999
+  },
+  "di": {
+    "cal_mean": 0.21316554633761356,
+    "cal_max": 0.7538280056912842,
+    "test_median": 1.4022354240588963,
+    "test_p95": 2.92746345630157,
+    "frac_test_above_cal_max": 0.70946
+  },
+  "selected_K_mode": 3,
+  "selected_kappa_mean": 0.85
+}
