@@ -350,6 +350,12 @@ for rg in HID:
     check(f"[{rg}] width-matched: the one t/Wilcoxon disagreement (W-Holm < 0.05, t-Holm > 0.05, diff < 0)",
           r["mean_diff"] < 0 and r["wilcoxon_p_holm"] < 0.05 and r["p_holm"] > 0.05)
 
+for rg in COV:
+    out_ = cl(rg, "clipped", "frac_mean") * max(0.9 - cl(rg, "clipped", "coverage_mean"), 0)
+    in_ = cl(rg, "unclipped", "frac_mean") * max(0.9 - cl(rg, "unclipped", "coverage_mean"), 0)
+    check(f"[{rg}] most (>= 70%) of DI-CQR's coverage shortfall lies beyond the calibration DI range ({out_/(out_+in_):.2f})",
+          out_ / (out_ + in_) >= 0.70)
+
 # abstract
 check("severe: oracle covers more than DI-CQR; LCP covers less (marginal and worst)",
       v("severe", "weighted_oracle", "true_marginal") > v("severe", "di_cqr", "true_marginal") and
