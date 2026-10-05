@@ -114,28 +114,30 @@ for ci, (rg, lab) in enumerate([("severe", "severe, covariate access"), ("hidden
         a.set_title(f"({'abcd'[2 * ri + ci]}) {lab}", loc="left", fontsize=9)
 fig.tight_layout(); save(fig, "fig3_methods.png")
 
-# ---- Fig 4: coverage and width against DI (one severe run) ----------------------------
-ev = np.array(F["ev"])
-di = np.array(F["di"])[ev]; ins = np.array(F["in_split"])[ev]; inp = np.array(F["in_dicqr"])[ev]
-hs = np.array(F["half_split"])[ev]; hp = np.array(F["half_dicqr"])[ev]
-edges = np.quantile(di, np.linspace(0, 1, 11)); mid = .5 * (edges[:-1] + edges[1:])
-
-
-def binstat(v):
-    b = np.clip(np.digitize(di, edges) - 1, 0, 9)
-    return [v[b == i].mean() for i in range(10)]
-
-
-fig, ax = plt.subplots(1, 2, figsize=(10, 3.6))
-ax[0].plot(mid, binstat(ins), "o-", c=COL["split"], label="Split", ms=4)
-ax[0].plot(mid, binstat(inp), "s-", c=COL["di_cqr"], label="DI-CQR", ms=4)
-ax[0].axhline(NOM, ls="--", c="k", lw=0.8); ax[0].set_ylim(0, 1)
-ax[0].set_xlabel("Dissimilarity Index (decile midpoints)"); ax[0].set_ylabel("coverage")
-ax[0].legend(fontsize=8); ax[0].set_title("(a)", loc="left")
-ax[1].plot(mid, [2 * x for x in binstat(hs)], "o-", c=COL["split"], label="Split", ms=4)
-ax[1].plot(mid, [2 * x for x in binstat(hp)], "s-", c=COL["di_cqr"], label="DI-CQR", ms=4)
-ax[1].set_xlabel("Dissimilarity Index (decile midpoints)"); ax[1].set_ylabel("mean interval width")
-ax[1].set_title("(b)", loc="left")
+# ---- Fig 4: coverage by decile of the dissimilarity index, averaged ----------------------
+DC = pd.read_csv(os.path.join(RES, "sim_di_curve.csv"))
+LCV = pd.read_csv(os.path.join(RES, "lucas_di_curve.csv"))
+curve_m = ["split", "cqr", "di_normalized", "di_cqr", "lcp_cqr", "weighted_oracle", "width_matched_global"]
+fig, ax = plt.subplots(1, 3, figsize=(14, 3.9), sharey=True)
+panels = [(DC[DC.regime == "severe"], "(a) simulation, severe covariate access", 30),
+          (DC[DC.regime == "hidden_severe"], "(b) simulation, severe hidden access", 30),
+          (LCV, "(c) LUCAS 2015", 20)]
+for j, (d, lab, nrep) in enumerate(panels):
+    for m in curve_m:
+        dm = d[d.method == m].sort_values("decile")
+        if not len(dm):
+            continue
+        se = dm["cov_sd"] / np.sqrt(nrep)
+        c_ = COL.get(m, "0.45")
+        ls_ = "--" if m == "width_matched_global" else "-"
+        ax[j].plot(dm["decile"], dm["cov_mean"], ls_, marker="o", ms=3.5, lw=1.4, color=c_, label=PRETTY[m])
+        ax[j].fill_between(dm["decile"], dm["cov_mean"] - se, dm["cov_mean"] + se, color=c_, alpha=0.15, lw=0)
+    ax[j].axhline(NOM, ls="--", c="k", lw=0.8)
+    ax[j].set_xticks(range(1, 11)); ax[j].set_ylim(0, 1.02)
+    ax[j].set_xlabel("decile of the dissimilarity index (1 = least dissimilar)")
+    ax[j].set_title(lab, loc="left", fontsize=9)
+ax[0].set_ylabel("coverage")
+ax[0].legend(fontsize=7, loc="lower left")
 fig.tight_layout(); save(fig, "fig4_coverage_vs_di.png")
 
 # ---- Fig A1: coverage-width frontier ---------------------------------------------------

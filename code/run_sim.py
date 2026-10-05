@@ -73,6 +73,9 @@ BASE_METHODS = ["split", "normalized", "di_normalized", "di_normalized_auto",
                 "width_matched_global"]
 UNBOUNDED_METHODS = ["lcp", "lcp_cqr", "geo_lcp", "weighted_oracle", "weighted_estimated",
                      "weighted_proxy"]
+CAP_MULTS = [2, 3, 5, 10]          # unbounded half-width = mult x range of fitting responses
+CURVE_METHODS = ["split", "cqr", "di_normalized", "di_cqr", "lcp", "lcp_cqr",
+                 "weighted_oracle", "width_matched_global"]
 KAPPAS = [0.1, 0.25, 0.5, 1.0]
 REGION_KS = [2, 3, 4]
 ABLATION_K = [3, 4, 5, 6, 8, 10]
@@ -196,6 +199,24 @@ def one_run(regime, seed, save_fields=False):
         res["methods"][name] = s
     res["di_cqr_bin_counts"] = di_cqr_intervals[3]
     res["selected"] = {"K": int(K_sel), "kappa": float(kap_sel)}
+
+    # ---- sensitivity to the cap used for unbounded intervals
+    rng_y = float(yf.max() - yf.min())
+    cap_sens = {}
+    for mult in CAP_MULTS:
+        d = {}
+        for name in UNBOUNDED_METHODS:
+            lo, hi, half = CF.cap_interval(name, *raw[name], mu_all, qlo_all, qhi_all, mult * rng_y)
+            s, _ = _summ(reg[ev], y[ev], lo[ev], hi[ev], di_all[ev])
+            d[name] = {k: s[k] for k in ["true_marginal", "worst_region_coverage",
+                                         "mean_width", "mean_interval_score"]}
+        cap_sens[str(mult)] = d
+    res["cap_sens"] = cap_sens
+
+    # ---- coverage by decile of the held-out DI (partition-free diagnostic)
+    res["di_curve"] = {name: CF.coverage_by_di_bin(y[ev], intervals[name][0][ev],
+                                                   intervals[name][1][ev], di_all[ev], 10)
+                       for name in CURVE_METHODS}
 
     # fraction of held-out cells with an unbounded interval (before capping)
     res["unbounded"] = unbounded

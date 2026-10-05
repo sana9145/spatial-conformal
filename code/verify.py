@@ -304,6 +304,52 @@ for rg in COV:
     check(f"[{rg}] simulation: capping DI makes DI-normalized worse",
           v(rg, "di_normalized_clip", "mean_interval_score") > v(rg, "di_normalized", "mean_interval_score"))
 
+# coverage by DI decile (partition-free) and cap sensitivity
+DC = rd("sim_di_curve.csv"); LCV = rd("lucas_di_curve.csv")
+CS = rd("sim_cap_sens.csv"); LCS = rd("lucas_cap_sens.csv")
+
+
+def dc(rg, m):
+    return DC[(DC.regime == rg) & (DC.method == m)].sort_values("decile")["cov_mean"].to_numpy()
+
+
+def lcv(m):
+    return LCV[LCV.method == m].sort_values("decile")["cov_mean"].to_numpy()
+
+
+sp, wm, di_, cq = dc("severe", "split"), dc("severe", "width_matched_global"), dc("severe", "di_cqr"), dc("severe", "cqr")
+check("deciles/severe: split coverage falls steeply (first - last > 0.4)", sp[0] - sp[-1] > 0.4)
+check("deciles/severe: DI-CQR profile flatter than split and width-matched",
+      di_[0] - di_[-1] < min(sp[0] - sp[-1], wm[0] - wm[-1]))
+check("deciles/severe: width-matched over-covers the first decile (> DI-CQR) and falls below DI-CQR in the last",
+      wm[0] > di_[0] and wm[-1] < di_[-1])
+check("deciles/severe: DI-CQR above CQR in every decile", np.all(di_ > cq))
+check("deciles/severe: LCP-CQR and oracle weighted exceed DI-CQR in the last two deciles",
+      np.all(dc("severe", "lcp_cqr")[-2:] > di_[-2:]) and np.all(dc("severe", "weighted_oracle")[-2:] > di_[-2:]))
+for rg in STRONG:
+    d_, w_ = dc(rg, "di_cqr"), dc(rg, "width_matched_global")
+    check(f"[{rg}] deciles: DI-CQR coverage range narrower than width-matched (more even spread)",
+          d_.max() - d_.min() < w_.max() - w_.min())
+h = {m: dc("hidden_severe", m)[-1] for m in ["di_cqr", "width_matched_global", "cqr", "split"]}
+check("deciles/hidden_severe: last decile DI-CQR > width-matched > CQR > split",
+      h["di_cqr"] > h["width_matched_global"] > h["cqr"] > h["split"])
+check("deciles/LUCAS: DI-CQR above CQR and split in every decile",
+      np.all(lcv("di_cqr") > lcv("cqr")) and np.all(lcv("di_cqr") > lcv("split")))
+UNB5 = ["lcp", "lcp_cqr", "geo_lcp", "weighted_oracle", "weighted_estimated"]
+check("cap sensitivity (simulation): DI-CQR interval score below every unbounded method at caps 2-10x, all strong regimes",
+      all(v(rg, "di_cqr", "mean_interval_score") <
+          CS[(CS.regime == rg) & (CS.mult == k) & CS.method.isin(UNB5)]["mean_interval_score"].min()
+          for rg in STRONG for k in [2, 3, 5, 10]))
+check("cap sensitivity (LUCAS): DI-CQR interval score below every unbounded method at caps 2-10x",
+      all(lv("di_cqr", "mean_interval_score") < LCS[LCS.mult == k]["mean_interval_score"].min() for k in [2, 3, 5, 10]))
+check("cap 3x reproduces the main simulation results",
+      all(abs(float(CS[(CS.regime == rg) & (CS.mult == 3) & (CS.method == m)]["mean_interval_score"].iloc[0]) -
+              v(rg, m, "mean_interval_score")) < 1e-9 for rg in STRONG for m in UNB5))
+for rg in HID:
+    r = pdiff(rg, "width_matched_global", "mean_interval_score")
+    check(f"[{rg}] width-matched: the one t/Wilcoxon disagreement (W-Holm < 0.05, t-Holm > 0.05, diff < 0)",
+          r["mean_diff"] < 0 and r["wilcoxon_p_holm"] < 0.05 and r["p_holm"] > 0.05)
+
 # abstract
 check("severe: oracle covers more than DI-CQR; LCP covers less (marginal and worst)",
       v("severe", "weighted_oracle", "true_marginal") > v("severe", "di_cqr", "true_marginal") and

@@ -28,6 +28,16 @@ METHODS = ["split", "normalized", "di_normalized", "di_normalized_clip",
            "di_normalized_auto", "region_mondrian", "di_mondrian", "cqr", "di_cqr",
            "di_cqr_auto", "lcp", "lcp_cqr", "geo_lcp", "weighted_estimated"]
 UNBOUNDED_METHODS = ["lcp", "lcp_cqr", "geo_lcp", "weighted_estimated"]
+CAP_MULTS = [2, 3, 5, 10]
+CURVE_METHODS = ["split", "cqr", "di_normalized", "di_cqr", "lcp", "lcp_cqr"]
+
+
+def _metrics(yt, lo, hi, reg_t):
+    rt = MET.per_region(reg_t, yt, lo, hi, ALPHA)
+    covs = np.array([v["coverage"] for v in rt.values()])
+    return dict(marginal=MET.marginal_coverage(yt, lo, hi), worst_region=float(covs.min()),
+                coverage_gap=float(covs.max() - covs.min()), mean_width=float(np.mean(hi - lo)),
+                mean_interval_score=float(np.mean(MET.interval_score(yt, lo, hi, ALPHA))))
 _DF = None
 _PRED = None
 
@@ -108,8 +118,14 @@ def one_rep(seed):
             half = np.where(np.isfinite(half), half, cap)
             lo, hi = mu_t - half, mu_t + half
         iv[name] = (lo, hi, half)
+    rng_y = float(yf.max() - yf.min())
+    cap_sens = {str(mult): {name: _metrics(yt, *CF.cap_interval(name, *raw[name], mu_t, qlo_t, qhi_t,
+                                                                 mult * rng_y)[:2], reg_t)
+                            for name in UNBOUNDED_METHODS} for mult in CAP_MULTS}
+    di_curve = {name: CF.coverage_by_di_bin(yt, iv[name][0], iv[name][1], di_t, 10)
+                for name in CURVE_METHODS}
     # DI scale diagnostics: how far test queries extrapolate beyond calibration
-    out = {"seed": seed, "n_test": int(len(test)), "unbounded": unbounded,
+    out = {"cap_sens": cap_sens, "di_curve": di_curve,"seed": seed, "n_test": int(len(test)), "unbounded": unbounded,
            "selected": {"K": int(K_sel), "kappa": float(kap_sel)},
            "di": dict(cal_mean=float(di_c.mean()), cal_max=float(di_c.max()),
                       test_median=float(np.median(di_t)), test_p95=float(np.percentile(di_t, 95)),
@@ -168,6 +184,15 @@ def agg():
         selected_K_mode=int(pd.Series([r["selected"]["K"] for r in runs]).mode().iloc[0]),
         selected_kappa_mean=float(np.mean([r["selected"]["kappa"] for r in runs])))
     json.dump(diag, open(os.path.join(RES, "lucas_diag.json"), "w"), indent=2)
+    cs = pd.DataFrame([dict(mult=int(mult), method=m, **v) for r in runs
+                       for mult, d in r["cap_sens"].items() for m, v in d.items()])
+    cs.groupby(["mult", "method"]).mean(numeric_only=True).reset_index().to_csv(
+        os.path.join(RES, "lucas_cap_sens.csv"), index=False)
+    cv = pd.DataFrame([dict(method=m, decile=k + 1, coverage=c, width=w) for r in runs
+                       for m, d in r["di_curve"].items() for k, (c, w) in enumerate(zip(d["cov"], d["width"]))])
+    (cv.groupby(["method", "decile"]).agg(cov_mean=("coverage", "mean"), cov_sd=("coverage", "std"),
+                                         width_mean=("width", "mean")).reset_index()
+     .to_csv(os.path.join(RES, "lucas_di_curve.csv"), index=False))
     print("diag:", diag)
     print(g[["method", "marginal_mean", "worst_region_mean", "mean_width_mean", "mean_interval_score_mean"]].round(3).to_string(index=False))
     print("sig:", {k: (round(v["diff"], 2), f"{v['t_p']:.1e}", f"{v['w_p']:.1e}") for k, v in sig.items()})

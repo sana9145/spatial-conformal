@@ -291,6 +291,22 @@ def main():
          .agg(["mean", "std"]).reset_index()
          .to_csv(os.path.join(RES, "sim_unbounded.csv"), index=False))
 
+    # ---- sensitivity of width / interval score to the cap for unbounded intervals
+    crs = [dict(regime=r["regime"], seed=r["seed"], mult=int(mult), method=m, **v)
+           for r in runs for mult, d in (r.get("cap_sens") or {}).items() for m, v in d.items()]
+    if crs:
+        (pd.DataFrame(crs).groupby(["regime", "mult", "method"]).mean(numeric_only=True)
+         .drop(columns="seed").reset_index().to_csv(os.path.join(RES, "sim_cap_sens.csv"), index=False))
+
+    # ---- coverage by decile of held-out DI, averaged over seeds
+    cvs = [dict(regime=r["regime"], seed=r["seed"], method=m, decile=k + 1, coverage=c, width=w)
+           for r in runs for m, d in (r.get("di_curve") or {}).items()
+           for k, (c, w) in enumerate(zip(d["cov"], d["width"]))]
+    if cvs:
+        (pd.DataFrame(cvs).groupby(["regime", "method", "decile"])
+         .agg(cov_mean=("coverage", "mean"), cov_sd=("coverage", "std"), width_mean=("width", "mean"))
+         .reset_index().to_csv(os.path.join(RES, "sim_di_curve.csv"), index=False))
+
     # ---- Kish effective sample size of the weighted-conformal calibration weights
     erows = [dict(regime=r["regime"], seed=r["seed"], method=m, ess=v)
              for r in runs for m, v in (r.get("weight_ess") or {}).items()]

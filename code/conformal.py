@@ -253,6 +253,29 @@ def lcp_cqr(qlo_cal, qhi_cal, y_cal, feat_cal, qlo_q, qhi_q, feat_q, alpha,
     return lo, hi, (hi - lo) / 2.0
 
 
+def cap_interval(name, lo, hi, half, mu, qlo, qhi, cap):
+    """Replace an unbounded interval by a finite one: offset `cap` around the
+    quantile-regression interval for LCP-CQR, half-width `cap` around mu otherwise."""
+    if name == "lcp_cqr":
+        lo = np.where(np.isfinite(lo), lo, qlo - cap)
+        hi = np.where(np.isfinite(hi), hi, qhi + cap)
+        return lo, hi, (hi - lo) / 2.0
+    half = np.where(np.isfinite(half), half, cap)
+    return mu - half, mu + half, half
+
+
+def coverage_by_di_bin(y, lo, hi, di, nbins):
+    """Coverage and mean width within quantile bins of the query DI (bin 0 = least
+    dissimilar). Bins are defined on the evaluated queries themselves, so the
+    curve does not depend on any geographic partition."""
+    edges = np.quantile(di, np.linspace(0, 1, nbins + 1))[1:-1]
+    b = np.digitize(di, edges)
+    cov = (y >= lo) & (y <= hi)
+    w = hi - lo
+    return dict(cov=[float(cov[b == k].mean()) if np.any(b == k) else None for k in range(nbins)],
+                width=[float(w[b == k].mean()) if np.any(b == k) else None for k in range(nbins)])
+
+
 def _interval_score(y, lo, hi, alpha):
     width = hi - lo
     pen = (2.0 / alpha) * ((lo - y) * (y < lo) + (y - hi) * (y > hi))

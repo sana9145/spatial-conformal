@@ -40,6 +40,7 @@ METHODS = ["split", "normalized", "di_normalized", "di_normalized_auto",
            "region_mondrian", "di_mondrian", "cqr", "di_cqr", "di_cqr_K2", "di_cqr_auto",
            "lcp", "lcp_cqr", "geo_lcp", "weighted_estimated"]
 UNBOUNDED_METHODS = ["lcp", "lcp_cqr", "geo_lcp", "weighted_estimated"]
+CURVE_METHODS = ["split", "cqr", "di_normalized", "di_cqr", "di_cqr_K2", "lcp", "lcp_cqr"]
 
 
 def load():
@@ -162,7 +163,10 @@ def one_rep(df, seed):
     levels = [min(1.0, CF.conformal_rank(c, ALPHA) / c) if c >= 6 else None
               for c in counts_m]
     reg_counts = [int((reg_t == r).sum()) for r in np.unique(reg_t)]
-    out = {"seed": seed, "n_test": int(len(test)),
+    # coverage by DI quintile of the ~55 held-out sites (partition-free diagnostic)
+    di_curve = {name: CF.coverage_by_di_bin(yt, iv[name][0], iv[name][1], di_t, 5)
+                for name in CURVE_METHODS}
+    out = {"seed": seed, "n_test": int(len(test)), "di_curve": di_curve,
            "bin_levels": levels, "test_per_region": reg_counts, "unbounded": unbounded,
            "n_fit": int(len(fit)), "n_cal": int(len(cal)), "K": K, "min_n": 6,
            "bin_counts": [int(c) for c in counts_m], "n_fallback_bins": n_fallback,
@@ -239,6 +243,10 @@ def main():
                                                 t_p=float(stats.ttest_rel(a, b).pvalue),
                                                 w_p=float(stats.wilcoxon(a, b).pvalue))
     json.dump(sig, open(os.path.join(RES, "meuse_sig.json"), "w"), indent=2)
+    cv = pd.DataFrame([dict(method=m, bin=k + 1, coverage=c) for r in runs
+                       for m, d in r["di_curve"].items() for k, c in enumerate(d["cov"]) if c is not None])
+    (cv.groupby(["method", "bin"]).agg(cov_mean=("coverage", "mean"), cov_sd=("coverage", "std"))
+     .reset_index().to_csv(os.path.join(RES, "meuse_di_curve.csv"), index=False))
 
     # print
     piv = pd.DataFrame(rows).pivot(index="method", columns="metric", values="mean")
