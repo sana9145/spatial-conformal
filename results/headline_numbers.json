@@ -1086,6 +1086,7 @@
  "lucasdi:test_median": "1.40",
  "lucasdi:test_p95": "2.93",
  "lucasratio:dinorm_dicqr": "3.2",
+ "lucasratio:dinormauto_dicqr": "1.8",
  "lucassig:di_cqr-cqr:d": "$-$0.01",
  "lucassig:di_cqr-cqr:p": "{=}\\,0.93",
  "lucassig:di_cqr-cqr:wp": "{=}\\,0.39",

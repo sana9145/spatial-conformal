@@ -356,6 +356,41 @@ for rg in COV:
     check(f"[{rg}] most (>= 70%) of DI-CQR's coverage shortfall lies beyond the calibration DI range ({out_/(out_+in_):.2f})",
           out_ / (out_ + in_) >= 0.70)
 
+# tuned DI-normalized against DI-CQR (stated in Sect. 5.3, 5.6.2 and the Discussion)
+r = pdiff("severe", "di_normalized_auto", "worst_region_coverage")
+check("severe: tuned DI-normalized covers the worst region better than DI-CQR (Holm t and Wilcoxon < 0.05)",
+      r["mean_diff"] < 0 and r["p_holm"] < 0.05 and r["wilcoxon_p_holm"] < 0.05)
+check("severe: tuned DI-normalized interval score below DI-CQR's",
+      v("severe", "di_normalized_auto", "mean_interval_score") < v("severe", "di_cqr", "mean_interval_score"))
+for rg in ["moderate", "hidden_moderate", "hidden_severe"]:
+    check(f"[{rg}] tuned DI-normalized and DI-CQR indistinguishable (Holm t and Wilcoxon > 0.05, both metrics)",
+          all(pdiff(rg, "di_normalized_auto", m)["p_holm"] > 0.05 and pdiff(rg, "di_normalized_auto", m)["wilcoxon_p_holm"] > 0.05
+              for m in ["worst_region_coverage", "mean_interval_score"]))
+check("lucas: tuned DI-normalized wider than DI-CQR with a worse interval score but higher worst-region coverage",
+      lv("di_normalized_auto", "mean_width") > lv("di_cqr", "mean_width") and
+      lv("di_normalized_auto", "mean_interval_score") > lv("di_cqr", "mean_interval_score") and
+      lv("di_normalized_auto", "worst_region") > lv("di_cqr", "worst_region"))
+
+# LUCAS width ratios quoted in the text (abstract, Sect. 5.6.2, Discussion): recomputed
+# here from the per-repeat raw output, independently of make_tables.py and of any
+# rounded table value, and compared with the macro the manuscript prints
+LRAW = [json.loads(l) for l in open(os.path.join(RES, "lucas_raw.jsonl"))]
+
+
+def lucas_width(m):
+    return float(np.mean([r["methods"][m]["mean_width"] for r in LRAW]))
+
+
+def macro(key):
+    m_ = re.search(r"\\csname res@" + re.escape(key) + r"\\endcsname\{([^}]*)\}", new)
+    return m_.group(1) if m_ else None
+
+
+for key, num_m in [("lucasratio:dinorm_dicqr", "di_normalized"), ("lucasratio:dinormauto_dicqr", "di_normalized_auto")]:
+    ratio = lucas_width(num_m) / lucas_width("di_cqr")
+    check(f"{key}: ratio recomputed from lucas_raw.jsonl ({ratio:.4f}) matches the quoted {macro(key)}",
+          macro(key) == f"{ratio:.1f}")
+
 # abstract
 check("severe: oracle covers more than DI-CQR; LCP covers less (marginal and worst)",
       v("severe", "weighted_oracle", "true_marginal") > v("severe", "di_cqr", "true_marginal") and

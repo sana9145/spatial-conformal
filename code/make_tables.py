@@ -86,8 +86,20 @@ def cell(rg, m, col, dec=2):
     return f"{mean:.{dec}f}\\,$\\pm$\\,{sd:.{dec}f}"
 
 
+def copernicus_rules(lines):
+    """Copernicus table style: horizontal lines only above and below the table and
+    between head and body (no partial rules)."""
+    out = []
+    for ln in lines:
+        if ln.lstrip().startswith(r"\cmidrule"):
+            continue
+        out.append(ln.replace(r"\toprule", r"\tophline").replace(r"\midrule", r"\middlehline")
+                     .replace(r"\bottomrule", r"\bottomhline").replace(r"95\% CI", r"95\,\% CI"))
+    return out
+
+
 def write(name, lines):
-    open(os.path.join(PAP, name), "w", encoding="utf8", newline="\n").write("\n".join(lines) + "\n")
+    open(os.path.join(PAP, name), "w", encoding="utf8", newline="\n").write("\n".join(copernicus_rules(lines)) + "\n")
 
 
 # ------------------------------------------------------------------ numbers
@@ -227,6 +239,7 @@ def real_numbers():
         put(f"lucasdi:{k}", pct(v) if k.startswith("frac") else f2(v))
     put("lucasdi:ratio", f"{LD['di']['test_median'] / LD['di']['cal_mean']:.0f}")
     put("lucasratio:dinorm_dicqr", f"{L.loc['di_normalized']['mean_width_mean'] / L.loc['di_cqr']['mean_width_mean']:.1f}")
+    put("lucasratio:dinormauto_dicqr", f"{L.loc['di_normalized_auto']['mean_width_mean'] / L.loc['di_cqr']['mean_width_mean']:.1f}")
     for _, r in RB.iterrows():
         k = f"rob:{REG[r.regime]}:{r.method}"
         put(k + ":marg", f2(r.marginal_mean)); put(k + ":worst", f2(r.worst_mean))
@@ -544,4 +557,7 @@ if __name__ == "__main__":
     controls_table(); paired_table(); diag_table(); width_table(); ablation_table()
     meuse_table(); lucas_table(); bridge_table(); clip_table(); region_table()
     kappa_table(); mechanism_table(); auto_table(); cap_table(); numbers_file()
+    rb = os.path.join(PAP, "table_robust.tex")      # written by run_robust.py agg
+    if os.path.exists(rb):
+        write("table_robust.tex", open(rb, encoding="utf8").read().rstrip("\n").split("\n"))
     print(f"wrote LaTeX tables and {len(NUM)} quoted-number macros")

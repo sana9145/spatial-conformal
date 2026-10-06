@@ -165,7 +165,7 @@ def agg():
     L = [r"\begin{tabular}{l cc cc cc}", r"\toprule",
          r" & \multicolumn{2}{c}{Marginal cov.} & \multicolumn{2}{c}{Worst-region cov.} & \multicolumn{2}{c}{Interval score} \\",
          r"\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}",
-         r"Method (HGB mean model) & mod. & sev. & mod. & sev. & mod. & sev. \\", r"\midrule"]
+         r"Method (gradient-boosting mean model) & moderate & severe & moderate & severe & moderate & severe \\", r"\midrule"]
     for m in METHODS:
         L.append(f"{pretty[m]} & {cell('moderate',m,'marginal')} & {cell('severe',m,'marginal')} & "
                  f"{cell('moderate',m,'worst')} & {cell('severe',m,'worst')} & "
