@@ -2,8 +2,7 @@
 
 Code, raw experiment outputs and verification scripts for the manuscript
 *Dissimilarity-adaptive conformal prediction: improving per-region coverage for spatial
-models under uneven monitoring* by Sana Mustafa, prepared for Geoscientific Model
-Development.
+models under uneven monitoring* by Sana Mustafa.
 
 Archived on Zenodo: https://doi.org/10.5281/zenodo.23181222 (resolves to the latest
 version; each release also has its own version DOI).
